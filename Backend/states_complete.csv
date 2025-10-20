@@ -1,0 +1,37 @@
+state_name,capital,region,population,area_km2,gdp_inr_crore,literacy_rate,tourism_rank,best_season,famous_for,safety_index,visitors_2020,visitors_2021,visitors_2022,visitors_2023,visitors_2024,visitors_2025
+Andhra Pradesh,Amaravati,South,53903393,162968,1600000,67.4,10,"['October', 'Monsoon']","['Tirupati Temple', 'Beaches', 'Heritage Sites']",0.75,3800000,2000000,4500000,5200000,5800000,6100000
+Arunachal Pradesh,Itanagar,North East,1383727,83743,25000,66.9,28,"['April', 'October']","['Tawang Monastery', 'Valleys', 'Tribal culture']",0.82,100000,40000,110000,120000,130000,140000
+Assam,Dispur,North East,31205576,78438,850000,72.2,14,"['October', 'February']","['Kaziranga', 'Tea Gardens']",0.74,1600000,800000,1700000,1900000,2000000,2200000
+Bihar,Patna,East,124799926,94163,600000,61.8,21,"['October', 'February']","['Bodhgaya', 'Rajgir']",0.67,2800000,1500000,3000000,3200000,3400000,3600000
+Chhattisgarh,Raipur,Central,25545198,135192,400000,71,23,"['October', 'February']","['Chitrakote Falls', 'Kanha National Park']",0.72,900000,500000,1100000,1300000,1400000,1500000
+Goa,Panaji,West,1458545,3702,80000,88.7,1,"['November', 'February']","['Beaches', 'Festivals']",0.89,2200000,900000,2500000,2800000,3000000,3200000
+Gujarat,Gandhinagar,West,60439692,196024,1900000,79.3,6,"['October', 'March']","['Rann of Kutch', 'Statue of Unity']",0.8,3300000,1700000,3800000,4000000,4200000,4500000
+Haryana,Chandigarh,North,28204692,44212,950000,75.6,15,"['October', 'March']","['Kurukshetra', 'Pinjore Gardens']",0.76,1500000,700000,1800000,2000000,2100000,2300000
+Himachal Pradesh,Shimla,North,6864602,55673,150000,82.8,7,"['April', 'June']","['Manali', 'Shimla']",0.83,1200000,600000,1400000,1600000,1700000,1800000
+Jharkhand,Ranchi,East,38593948,79716,350000,66.4,22,"['October', 'February']","['Betla National Park', 'Deoghar']",0.7,1100000,500000,1200000,1400000,1500000,1600000
+Karnataka,Bengaluru,South,67562686,191791,1874000,75.4,5,"['Winter', 'Monsoon']","['Temples', 'Wildlife', 'Beaches']",0.83,8000000,3500000,8200000,9000000,9400000,9700000
+Kerala,Thiruvananthapuram,South,33406061,38863,1200000,94,3,"['October', 'March']","['Backwaters', 'Beaches', 'Hill Stations']",0.85,10000000,4800000,10500000,11800000,12200000,12500000
+Madhya Pradesh,Bhopal,Central,72626809,308350,900000,70.6,9,"['October', 'February']","['Khajuraho', 'National Parks']",0.73,2500000,1300000,2800000,3000000,3200000,3400000
+Maharashtra,Mumbai,West,112374333,307713,2767000,82.3,2,"['November', 'February']","['Bollywood', 'Beaches', 'Historic Forts']",0.77,11000000,5500000,12000000,13000000,13500000,14000000
+Manipur,Imphal,North East,2855794,22327,30000,79.9,27,"['October', 'March']","['Loktak Lake', 'Tribal Culture']",0.8,200000,90000,220000,240000,260000,280000
+Meghalaya,Shillong,North East,2966889,22429,45000,74.4,25,"['October', 'March']","['Cherrapunji', 'Living Root Bridges']",0.82,300000,130000,320000,340000,360000,380000
+Mizoram,Aizawl,North East,1091014,21081,20000,91.3,30,"['October', 'March']","['Tropical Forests', 'Hill Stations']",0.85,90000,35000,95000,110000,115000,120000
+Nagaland,Kohima,North East,1980602,16579,15000,80.1,28,"['October', 'March']","['Tribal Culture', 'Festivals']",0.8,150000,70000,180000,200000,220000,240000
+Odisha,Bhubaneswar,East,41974218,155707,550000,72.9,12,"['October', 'February']","['Konark Temple', 'Puri Beach']",0.75,2200000,1000000,2400000,2600000,2800000,3000000
+Punjab,Chandigarh,North,27743338,50362,700000,75.8,18,"['October', 'March']","['Golden Temple', 'Historical Sites']",0.78,1400000,700000,1600000,1700000,1800000,1900000
+Rajasthan,Jaipur,West,68548437,342239,900000,66.1,4,"['October', 'March']","['Desert Forts', 'Palaces']",0.7,2800000,1300000,2900000,3100000,3300000,3500000
+Sikkim,Gangtok,North East,610577,7096,10000,81.4,29,"['March', 'April']","['Himalayan Views', 'Buddhist Monasteries']",0.88,70000,30000,75000,85000,90000,95000
+Tamil Nadu,Chennai,South,72147030,130058,1700000,80.1,7,"['November', 'February']","['Temples', 'Beaches', 'Heritage Sites']",0.82,9000000,5000000,9500000,11000000,11500000,12000000
+Telangana,Hyderabad,South,35003674,112077,850000,66.5,15,"['October', 'February']","['Charminar', 'Heritage Sites']",0.76,2800000,1200000,3100000,3500000,3800000,4000000
+Tripura,Agartala,North East,4169794,10486,20000,87.2,26,"['November', 'February']","['Wildlife Parks', 'Temples']",0.79,350000,150000,400000,430000,450000,480000
+Uttar Pradesh,Lucknow,North,199812341,243286,1500000,67.7,8,"['October', 'March']","['Taj Mahal', 'Varanasi']",0.68,5000000,2100000,5200000,5500000,5800000,6000000
+Uttarakhand,Dehradun,North,10086292,53483,300000,79.6,17,"['April', 'June']","['Hill Stations', 'Rivers']",0.77,1200000,550000,1300000,1400000,1500000,1600000
+West Bengal,Kolkata,East,91276115,88752,1350000,77.1,13,"['October', 'February']","['Darjeeling', 'Sundarbans']",0.75,8000000,3500000,7800000,8500000,9000000,9400000
+Andaman and Nicobar Islands,Port Blair,Union Territory,380581,8249,10000,86.3,24,"['November', 'March']","['Beaches', 'Islands']",0.85,120000,60000,115000,130000,140000,145000
+Chandigarh,Chandigarh,Union Territory,1055450,114,13000,86.4,25,"['October', 'March']","['Rose Garden', 'Rock Garden']",0.88,450000,200000,480000,510000,550000,580000
+Dadra and Nagar Haveli and Daman and Diu,Daman,Union Territory,585764,603,5000,77.2,27,"['November', 'February']","['Beaches', 'Heritage']",0.8,75000,30000,80000,85000,90000,95000
+Delhi,New Delhi,Union Territory,16787941,1484,1130000,86.2,11,"['October', 'March']","['Monuments', 'Museums']",0.75,9000000,4000000,8500000,9200000,9700000,10000000
+Jammu and Kashmir,Srinagar,Union Territory,12541302,55596,500000,68.7,15,"['May', 'September']","['Hill Stations', 'Lakes']",0.65,1100000,450000,1150000,1200000,1300000,1350000
+Ladakh,Leh,Union Territory,274289,59146,30000,77.2,29,"['June', 'September']","['Mountains', 'Monasteries']",0.7,90000,40000,95000,105000,110000,115000
+Lakshadweep,Kavaratti,Union Territory,64473,32,1000,92.3,30,"['November', 'February']","['Islands', 'Marine Life']",0.85,30000,12000,32000,35000,37000,39000
+Puducherry,Puducherry,Union Territory,1444641,490,15000,85.4,20,"['October', 'February']","['French Colony', 'Beaches']",0.8,450000,210000,480000,530000,550000,570000

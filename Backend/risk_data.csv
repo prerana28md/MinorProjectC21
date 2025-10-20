@@ -1,0 +1,29 @@
+state,risk_index,flood_risk,landslide_risk,earthquake_zone,crime_rate,accident_rate,health_alerts,safety_suggestions,cyclone_risk,drought_risk,forest_fire_risk,insurance_available,major_disaster_years,hotspot_districts,sea_erosion_risk
+Andhra Pradesh,0.62,0.7,0.4,Zone II,0.26,0.21,Heat stroke (summer),Take precautions during cyclones,0.69,0.52,0.12,Yes,"2014, 2020","Visakhapatnam, Nellore",0.15
+Arunachal Pradesh,0.66,0.35,0.8,Zone V,0.11,0.09,Malaria (monsoon),Check for landslide warnings in hills,0.0,0.19,0.11,Limited,2017,"Itanagar, Changlang",0.0
+Assam,0.74,0.9,0.5,Zone V,0.19,0.12,Floodborne diseases (monsoon),Follow Assam flood alerts,0.0,0.33,0.15,Limited,"2022, 2023","Barpeta, Cachar",0.0
+Bihar,0.68,0.7,0.18,Zone IV,0.38,0.27,Encephalitis,Avoid river journeys during monsoon,0.0,0.6,0.08,No,"2017, 2022","Sitamarhi, Supaul",0.0
+Chhattisgarh,0.64,0.39,0.21,Zone II,0.33,0.22,Vector-borne diseases,Review jungle safety tips,0.0,0.6,0.23,Yes,2019,"Bastar, Raipur",0.0
+Goa,0.52,0.7,0.3,Zone III,0.22,0.18,,Follow sea erosion advisories,0.21,0.15,0.05,Yes,2019,North Goa,0.17
+Gujarat,0.63,0.65,0.05,Zone IV,0.24,0.24,"Heatwave, dengue",Heat precautions in summer,0.74,0.47,0.04,Yes,"2001, 2017, 2023","Ahmedabad, Kutch",0.21
+Haryana,0.6,0.47,0.19,Zone IV,0.42,0.33,,Caution in flood-prone districts,0.02,0.49,0.04,No,2008,"Yamunanagar, Gurgaon",0.0
+Himachal Pradesh,0.79,0.57,0.92,Zone V,0.13,0.19,Seasonal influenza,Avoid landslides during rains,0.0,0.18,0.19,No,"2013, 2023","Kullu, Shimla",0.0
+Jharkhand,0.59,0.33,0.28,Zone III,0.29,0.2,,Be alert for mining zone risks,0.29,0.46,0.17,No,2020,"Ranchi, Dhanbad",0.0
+Karnataka,0.68,0.75,0.6,Zone III,0.25,0.18,Dengue risk (Monsoon),Avoid travel during heavy monsoon rains,0.24,0.8,0.12,Yes,"2015,2017,2019,2022","Bangalore Urban, Kodagu, Dakshina Kannada",0.15
+Kerala,0.81,0.89,0.85,Zone III,0.14,0.16,Leptospirosis (monsoon),Follow monsoon warnings,0.41,0.56,0.16,Yes,"2018,2019,2021","Idukki, Malappuram",0.33
+Madhya Pradesh,0.62,0.35,0.13,Zone II,0.38,0.22,Heatstroke,Avoid forest areas during peak summer,0.02,0.7,0.21,No,2021,"Damoh, Mandla",0.0
+Maharashtra,0.77,0.73,0.65,Zone IV,0.34,0.24,"Malaria, flooding",Evacuate low-lying Mumbai in heavy rain,0.53,0.62,0.09,Yes,"2019,2021","Mumbai, Raigad, Satara",0.19
+Manipur,0.64,0.47,0.69,Zone V,0.28,0.13,Monsoon diseases,Hill districts: check landslide forecasts,0.0,0.28,0.05,No,2015,"Imphal, Churachandpur",0.0
+Meghalaya,0.74,0.7,0.84,Zone V,0.12,0.12,"Flood risk, vector diseases",Caution in Cherrapunji rains,0.0,0.24,0.18,No,2022,"Shillong, Cherrapunji",0.0
+Mizoram,0.59,0.28,0.72,Zone V,0.16,0.1,Malaria,Check hill road advisories,0.0,0.12,0.14,No,2017,"Aizawl, Lunglei",0.0
+Nagaland,0.58,0.38,0.7,Zone V,0.21,0.13,,Monsoon travel: watch for landslides,0.0,0.22,0.12,No,2018,"Kohima, Dimapur",0.0
+Odisha,0.82,0.85,0.21,Zone III,0.19,0.15,"Heatwave, cyclone alerts",Evacuation for coastal cyclones,0.71,0.62,0.17,Yes,"2019,2022,2023","Puri, Kendrapara",0.23
+Punjab,0.65,0.45,0.09,Zone IV,0.41,0.31,,Keep hydrated in hot summer,0.04,0.51,0.06,No,2018,"Ludhiana, Patiala",0.0
+Rajasthan,0.67,0.23,0.07,Zone II,0.3,0.19,Heatwave risk (summer),"Avoid desert heat, drink water",0.1,0.87,0.14,No,"2015,2021","Barmer, Jaisalmer",0.0
+Sikkim,0.77,0.62,0.88,Zone IV,0.18,0.13,,Avoid hill travel during rain,0.0,0.08,0.1,No,"2011,2023","Gangtok, North Sikkim",0.0
+Tamil Nadu,0.74,0.7,0.27,Zone III,0.21,0.18,"Cyclone, vector disease",Evacuate coastal zones in cyclones,0.81,0.59,0.07,Yes,"2015,2021","Chennai, Cuddalore",0.21
+Telangana,0.61,0.38,0.15,Zone II,0.34,0.22,Heatwave,Check summer weather forecasts,0.07,0.75,0.09,Yes,2020,"Hyderabad, Nalgonda",0.0
+Tripura,0.57,0.33,0.22,Zone V,0.15,0.11,Monsoon diseases,Review forest road warnings,0.0,0.32,0.06,No,2018,"Agartala, Dhalai",0.0
+Uttar Pradesh,0.64,0.53,0.09,Zone IV,0.54,0.26,"Encephalitis, dengue",Heed river alerts in East UP,0.0,0.62,0.03,No,2021,"Gorakhpur, Allahabad",0.0
+Uttarakhand,0.82,0.81,0.93,Zone V,0.11,0.2,"Leptospirosis, flu",High rainfall may cause roadblocks,0.0,0.2,0.19,No,"2013,2021","Chamoli, Uttarkashi",0.0
+West Bengal,0.78,0.76,0.4,Zone IV,0.36,0.23,"Cyclone, dengue",Follow cyclone and monsoon safety tips,0.89,0.53,0.04,Yes,"2020,2021,2023","South 24 Parganas, Darjeeling",0.23
