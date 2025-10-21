@@ -3,8 +3,25 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 
+from pymongo import MongoClient
+from flask_bcrypt import Bcrypt
+import os
+
 app = Flask(__name__)
 CORS(app)
+bcrypt = Bcrypt(app)
+# Allow routes to be reached with or without a trailing slash to avoid
+# automatic redirects that can turn POSTs into GETs and produce 405 errors
+# (keeps behavior consistent without adding endpoints)
+app.url_map.strict_slashes = False
+
+# Connect to MongoDB Atlas
+# Replace <username>, <password>, and <cluster-url> with your details
+mongo_uri = "mongodb+srv://prerana28:prerana28@cluster0.zm6aijh.mongodb.net/?retryWrites=true&w=majority"
+client = MongoClient(mongo_uri)
+db = client["tourism_db"]
+users_collection = db["users"]
+
 
 # In-memory user store for demo authentication
 users = {}
@@ -22,29 +39,35 @@ def not_found(e):
 def home():
     return jsonify({"message": "Welcome to Tourism Risk Dashboard API"})
 
-# User registration
-@app.route('/register', methods=['POST'])
-def register():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    if not username or not password:
-        return jsonify({"error": "Username and password required"}), 400
-    if username in users:
-        return jsonify({"error": "User already exists"}), 409
-    users[username] = generate_password_hash(password)
-    return jsonify({"message": "User registered successfully."}), 201
+# Get or update user interests
+@app.route('/user/<username>/interests', methods=['GET', 'PUT', 'POST'])
+def user_interests(username):
+    # GET: return the user's interests
+    if request.method == 'GET':
+        user = users_collection.find_one({"username": username}, {"password": 0})
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        # Ensure interests key exists
+        interests = user.get('interests', [])
+        return jsonify({"username": username, "interests": interests})
 
-# User login
-@app.route('/login', methods=['POST'])
-def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    hashed_pw = users.get(username)
-    if hashed_pw and check_password_hash(hashed_pw, password):
-        return jsonify({"message": "Login successful."})
-    return jsonify({"error": "Invalid credentials"}), 401
+    # PUT/POST: update interests
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Missing JSON body with interests"}), 400
+
+    interests = data.get('interests')
+    if interests is None:
+        return jsonify({"error": "'interests' key required in JSON body"}), 400
+
+    result = users_collection.update_one(
+        {"username": username},
+        {"$set": {"interests": interests}}
+    )
+
+    if result.matched_count == 0:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({"message": "User interests updated successfully.", "username": username, "interests": interests})
 
 # Get list of states
 @app.route('/states', methods=['GET'])
@@ -233,6 +256,31 @@ def compare_cities():
     }
 
     return jsonify(comparison)
+
+
+# List all users (safe view)
+@app.route('/users', methods=['GET'])
+def list_users():
+    """Return list of users stored in MongoDB, omitting password fields.
+
+    Note: This endpoint exposes user records and should be protected in
+    production (authentication/authorization). For now it is handy for
+    development and debugging.
+    """
+    try:
+        users = []
+        # Exclude password field from the returned documents
+        cursor = users_collection.find({}, {"password": 0})
+        for doc in cursor:
+            # Convert ObjectId to string for JSON serialization
+            if '_id' in doc:
+                doc['_id'] = str(doc['_id'])
+            users.append(doc)
+        return jsonify(users)
+    except Exception as e:
+        app.logger.exception('Failed to fetch users')
+        return jsonify({"error": "Failed to fetch users", "details": str(e)}), 500
+
 
 # ---------------------------------------------
 # 🌦️ WEATHER FORECAST MODULE (for Cities & States)
@@ -445,4 +493,8 @@ def get_state_weather(state_name):
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Disable the Werkzeug auto-reloader on Windows to avoid occasional
+    # OSError: [WinError 10038] when the reloader's thread/server interact
+    # poorly with the system selector. In development you can set debug
+    # True but keep use_reloader False to avoid the issue.
+    app.run(debug=True, use_reloader=False)
