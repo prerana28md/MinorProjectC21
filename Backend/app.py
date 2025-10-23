@@ -7,6 +7,7 @@ from pymongo import MongoClient
 from flask_bcrypt import Bcrypt
 import os
 
+
 app = Flask(__name__)
 CORS(app)
 bcrypt = Bcrypt(app)
@@ -17,7 +18,10 @@ app.url_map.strict_slashes = False
 
 # Connect to MongoDB Atlas
 # Replace <username>, <password>, and <cluster-url> with your details
-mongo_uri = "mongodb+srv://prerana28:prerana28@cluster0.zm6aijh.mongodb.net/?retryWrites=true&w=majority"
+from dotenv import load_dotenv
+load_dotenv()
+mongo_uri = os.getenv("MONGO_URI")
+
 client = MongoClient(mongo_uri)
 db = client["tourism_db"]
 users_collection = db["users"]
@@ -27,9 +31,72 @@ users_collection = db["users"]
 users = {}
 
 # Load data files
-states_complete_df = pd.read_csv('states_complete.csv')
-cities_df = pd.read_csv('cities.csv')
-risk_df = pd.read_csv('risk_data.csv')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+states_complete_df = pd.read_csv(os.path.join(BASE_DIR, "data", "states_complete.csv"))
+cities_df = pd.read_csv(os.path.join(BASE_DIR, "data", "cities.csv"))
+risk_df = pd.read_csv(os.path.join(BASE_DIR, "data", "risk_data.csv"))
+
+# ---------------------------------------------
+# 🔐 USER AUTHENTICATION (Register / Login)
+# ---------------------------------------------
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    # Handle GET requests with usage message and example
+    if request.method == 'GET':
+        return jsonify({
+            "message": "Use POST with JSON body to register a new user.",
+            "example": {
+                "username": "new_user",
+                "password": "secret",
+                "email": "you@example.com",
+                "interests": ["Beach"]
+            }
+        })
+
+    # Handle POST requests to register a new user
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Missing JSON body with username, email and password"}), 400
+
+    username = data.get('username')
+    password = data.get('password')
+    email = data.get('email')
+    interests = data.get('interests', [])  # optional, default to empty list
+
+    if not username or not password or not email:
+        return jsonify({"error": "Username, email and password are required"}), 400
+
+    # Check if username already exists in MongoDB
+    if users_collection.find_one({"username": username}):
+        return jsonify({"error": "Username already exists"}), 409
+
+    # Hash password for storage
+    hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
+
+    # Insert new user document
+    users_collection.insert_one({
+        "username": username,
+        "email": email,
+        "password": hashed_pw,
+        "interests": [],
+        "createdAt": pd.Timestamp.now()
+    })
+
+    return jsonify({"message": "User registered successfully."}), 201
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    user = users_collection.find_one({"username": username})
+    if not user or not bcrypt.check_password_hash(user["password"], password):
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    return jsonify({"message": "Login successful", "username": username})
+
 
 @app.errorhandler(404)
 def not_found(e):
@@ -490,6 +557,79 @@ def get_state_weather(state_name):
         return jsonify({"error": str(e)}), 500
 
 
+# ML
+from sklearn.linear_model import LinearRegression
+import numpy as np
+
+@app.route('/predict_trend/<state_name>', methods=['GET'])
+def predict_trend(state_name):
+    # Filter city data for the state
+    state_cities = cities_df[cities_df['state_name'].str.lower() == state_name.lower()]
+    if state_cities.empty:
+        return jsonify({"error": "State not found"}), 404
+
+    # Get unique categories in the state
+    categories = state_cities['category'].dropna().unique()
+
+    # Prepare result dictionary
+    category_predictions = {}
+
+    for category in categories:
+        cat_cities = state_cities[state_cities['category'] == category]
+        avg_rating = cat_cities['tourist_rating'].mean()
+
+        df = states_complete_df[states_complete_df['state_name'].str.lower() == state_name.lower()]
+        if df.empty:
+            continue
+
+        visitor_cols = [col for col in df.columns if col.startswith('visitors_')]
+        years_past = np.array([int(c.split('_')[1]) for c in visitor_cols]).reshape(-1, 1)
+        visitors = df[visitor_cols].values.flatten()
+
+        if len(visitors) < 2:
+            continue
+
+        model = LinearRegression()
+        model.fit(years_past, visitors)
+
+        future_years = np.array([2026, 2027, 2028]).reshape(-1, 1)
+        predicted_visitors = model.predict(future_years)
+
+        max_rating = 5.0
+        adj_predictions = (predicted_visitors * (avg_rating / max_rating)).astype(int)
+
+        category_predictions[category] = {
+            "average_tourist_rating": round(avg_rating, 2),
+            "predicted_visitors_by_year": {
+                str(year[0]):int(val) for year, val in zip(future_years, adj_predictions)
+            }
+        }
+
+    return jsonify({
+        "state": state_name,
+        "category_predictions": category_predictions
+    })
+
+
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+
+@app.route('/cluster_states', methods=['GET'])
+def cluster_states():
+    features = ['population', 'gdp_inr_crore', 'safety_index', 'literacy_rate']
+    df = states_complete_df[features].dropna()
+    X = StandardScaler().fit_transform(df)
+
+    kmeans = KMeans(n_clusters=4, random_state=42)
+    clusters = kmeans.fit_predict(X)
+
+    states_complete_df['cluster'] = clusters
+    result = states_complete_df[['state_name', 'cluster']].to_dict(orient='records')
+
+    return jsonify({
+        "total_clusters": 4,
+        "cluster_summary": result
+    })
 
 
 if __name__ == '__main__':
