@@ -9,7 +9,7 @@ import os
 
 
 app = Flask(__name__)
-CORS(app)
+CORS(app,resources={r"/*": {"origins": "*"}})
 bcrypt = Bcrypt(app)
 # Allow routes to be reached with or without a trailing slash to avoid
 # automatic redirects that can turn POSTs into GETs and produce 405 errors
@@ -40,9 +40,12 @@ risk_df = pd.read_csv(os.path.join(BASE_DIR, "data", "risk_data.csv"))
 # ---------------------------------------------
 # 🔐 USER AUTHENTICATION (Register / Login)
 # ---------------------------------------------
+from flask import request, jsonify
+from datetime import datetime
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    # Handle GET requests with usage message and example
+    # Handle GET request to show example usage
     if request.method == 'GET':
         return jsonify({
             "message": "Use POST with JSON body to register a new user.",
@@ -54,36 +57,44 @@ def register():
             }
         })
 
-    # Handle POST requests to register a new user
     data = request.get_json(silent=True)
     if not data:
-        return jsonify({"error": "Missing JSON body with username, email and password"}), 400
+        return jsonify({"error": "Missing JSON body with username, email, password"}), 400
 
     username = data.get('username')
     password = data.get('password')
     email = data.get('email')
-    interests = data.get('interests', [])  # optional, default to empty list
+    interests = data.get('interests', [])
 
     if not username or not password or not email:
         return jsonify({"error": "Username, email and password are required"}), 400
 
-    # Check if username already exists in MongoDB
-    if users_collection.find_one({"username": username}):
-        return jsonify({"error": "Username already exists"}), 409
+    # Check if username or email exists
+    if users_collection.find_one({"$or": [{"username": username}, {"email": email}]}):
+        return jsonify({"error": "Username or Email already exists"}), 409
 
-    # Hash password for storage
+    # Hash password (using bcrypt as in your original)
     hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
 
-    # Insert new user document
+    # Insert user document including interests and createdAt timestamp
     users_collection.insert_one({
         "username": username,
         "email": email,
         "password": hashed_pw,
-        "interests": [],
-        "createdAt": pd.Timestamp.now()
+        "interests": interests,
+        "createdAt": datetime.utcnow()
     })
 
     return jsonify({"message": "User registered successfully."}), 201
+
+@app.route('/interests', methods=['GET'])
+def get_interests():
+    # Get unique categories from the actual dataset
+    unique_categories = cities_df['category'].dropna().unique().tolist()
+    # Sort them for better user experience
+    unique_categories.sort()
+    return jsonify(unique_categories)
+
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -144,7 +155,13 @@ def get_states():
 # Get state details
 @app.route('/states/<state_name>', methods=['GET'])
 def state_details(state_name):
+    # Try exact match first
     df = states_complete_df[states_complete_df['state_name'].str.lower() == state_name.lower()]
+    
+    # If no exact match, try partial match
+    if df.empty:
+        df = states_complete_df[states_complete_df['state_name'].str.lower().str.contains(state_name.lower(), na=False)]
+    
     if df.empty:
         abort(404)
     # Return all state details except tourism trend columns for brevity
@@ -163,22 +180,42 @@ def state_risk(state_name):
         abort(404)
     return jsonify(df.iloc[0].to_dict())
 
-# Tourism trends from states_complete.csv
+# Tourism trends from states_complete.csv based on actual visitor data
 @app.route('/states/<state_name>/tourism_trends', methods=['GET'])
 def tourism_trends_data(state_name):
+    # Try exact match first
     df = states_complete_df[states_complete_df['state_name'].str.lower() == state_name.lower()]
+    
+    # If no exact match, try partial match
+    if df.empty:
+        df = states_complete_df[states_complete_df['state_name'].str.lower().str.contains(state_name.lower(), na=False)]
+    
     if df.empty:
         abort(404)
-    trend_cols = [c for c in df.columns if c.startswith('tourism_')]
-    trends = {col.replace('tourism_', ''): int(df.iloc[0][col]) for col in trend_cols}
+    
+    # Get visitor columns (visitors_2020, visitors_2021, etc.)
+    visitor_cols = [c for c in df.columns if c.startswith('visitors_')]
+    trends = {}
+    
+    for col in visitor_cols:
+        year = col.split('_')[1]  # Extract year from column name
+        trends[year] = int(df.iloc[0][col]) if pd.notna(df.iloc[0][col]) else 0
+    
     return jsonify(trends)
 
 # Cities in a state
 @app.route('/states/<state_name>/cities', methods=['GET'])
 def state_cities(state_name):
+    # Try exact match first
     df = cities_df[cities_df['state_name'].str.lower() == state_name.lower()]
+    
+    # If no exact match, try partial match
     if df.empty:
-        abort(404)
+        df = cities_df[cities_df['state_name'].str.lower().str.contains(state_name.lower(), na=False)]
+    
+    if df.empty:
+        # Return empty list instead of 404 to avoid breaking frontend
+        return jsonify([])
     return jsonify(df.to_dict(orient='records'))
 
 # City details
@@ -205,10 +242,12 @@ def search_places():
     filtered = filtered[filtered['risk_index'] <= max_risk]
     if month:
         m = month.lower()
-        filtered = filtered[
-            filtered['best_time_to_visit'].str.lower().str.contains(m) |
-            filtered['popular_months'].str.lower().str.contains(m)
-        ]
+        # Improved month filtering - check both best_time_to_visit and popular_months
+        month_mask = (
+            filtered['best_time_to_visit'].str.lower().str.contains(m, na=False) |
+            filtered['popular_months'].str.lower().str.contains(m, na=False)
+        )
+        filtered = filtered[month_mask]
     if filtered.empty:
         return jsonify({"message": "No places found matching criteria."})
     return jsonify(filtered.to_dict(orient='records'))
@@ -239,6 +278,7 @@ def recommend():
 
     # Extract user preferences
     interests = data.get('interests', [])
+    month = data.get('month', '')
     max_risk = float(data.get('max_risk', 1.0))
     min_rating = float(data.get('min_rating', 0))
 
@@ -250,6 +290,16 @@ def recommend():
         interest_set = set(i.lower() for i in interests)
         if 'category' in filtered.columns:
             filtered = filtered[filtered['category'].str.lower().isin(interest_set)]
+
+    # Filter by month if provided
+    if month:
+        m = month.lower()
+        # Check if the selected month is in popular_months or best_time_to_visit
+        month_mask = (
+            filtered['best_time_to_visit'].str.lower().str.contains(m, na=False) |
+            filtered['popular_months'].str.lower().str.contains(m, na=False)
+        )
+        filtered = filtered[month_mask]
 
     # Filter by risk and rating
     if 'risk_index' in filtered.columns:
@@ -265,7 +315,7 @@ def recommend():
     filtered = filtered.sort_values(['tourist_rating', 'risk_index'], ascending=[False, True])
 
     # Convert any numpy datatypes to normal Python types
-    results = filtered.head(10).applymap(lambda x: x.item() if hasattr(x, 'item') else x)
+    results = filtered.head(10).map(lambda x: x.item() if hasattr(x, 'item') else x)
 
     # Return final recommendations
     return jsonify({
@@ -561,7 +611,7 @@ def get_state_weather(state_name):
 from sklearn.linear_model import LinearRegression
 import numpy as np
 
-@app.route('/predict_trend/<state_name>', methods=['GET'])
+@app.route('/predict_trend/<state_name>', methods=['GET','POST'])
 def predict_trend(state_name):
     # Filter city data for the state
     state_cities = cities_df[cities_df['state_name'].str.lower() == state_name.lower()]
@@ -608,6 +658,63 @@ def predict_trend(state_name):
     return jsonify({
         "state": state_name,
         "category_predictions": category_predictions
+    })
+
+# Get future predictions for a specific state and category
+@app.route('/predict_trend/<state_name>/<category>', methods=['GET'])
+def predict_trend_by_category(state_name, category):
+    # Filter city data for the state and category
+    state_cities = cities_df[
+        (cities_df['state_name'].str.lower() == state_name.lower()) &
+        (cities_df['category'].str.lower() == category.lower())
+    ]
+    
+    if state_cities.empty:
+        return jsonify({"error": "State or category not found"}), 404
+
+    # Get state data
+    df = states_complete_df[states_complete_df['state_name'].str.lower() == state_name.lower()]
+    if df.empty:
+        return jsonify({"error": "State not found"}), 404
+
+    # Get visitor data
+    visitor_cols = [col for col in df.columns if col.startswith('visitors_')]
+    years_past = np.array([int(c.split('_')[1]) for c in visitor_cols]).reshape(-1, 1)
+    visitors = df[visitor_cols].values.flatten()
+
+    if len(visitors) < 2:
+        return jsonify({"error": "Insufficient data for prediction"}), 400
+
+    # Create model and predict
+    model = LinearRegression()
+    model.fit(years_past, visitors)
+
+    # Historical data
+    historical_data = []
+    for i, col in enumerate(visitor_cols):
+        year = int(col.split('_')[1])
+        historical_data.append({
+            "year": year,
+            "visitors": int(visitors[i]) if pd.notna(visitors[i]) else 0
+        })
+
+    # Future predictions
+    future_years = np.array([2026, 2027, 2028]).reshape(-1, 1)
+    predicted_visitors = model.predict(future_years)
+
+    future_data = []
+    for year, visitors in zip(future_years.flatten(), predicted_visitors):
+        future_data.append({
+            "year": int(year),
+            "visitors": int(visitors)
+        })
+
+    return jsonify({
+        "state": state_name,
+        "category": category,
+        "historical_data": historical_data,
+        "future_predictions": future_data,
+        "model_accuracy": "Linear Regression based on historical visitor trends"
     })
 
 
