@@ -1,20 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Button, Card, Badge } from 'react-bootstrap';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { authAPI } from '../services/api';
 
 const Home = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [userInterests, setUserInterests] = useState([]);
   const [username, setUsername] = useState(null);
-
-  useEffect(() => {
-    const storedUsername = localStorage.getItem('username');
-    if (storedUsername) {
-      setUsername(storedUsername);
-      fetchUserInterests(storedUsername);
-    }
-  }, []);
 
   const fetchUserInterests = async (username) => {
     try {
@@ -22,11 +15,33 @@ const Home = () => {
       setUserInterests(response.data.interests || []);
     } catch (err) {
       console.log('Could not fetch user interests');
+      setUserInterests([]);
     }
   };
 
+  const checkLoginStatus = useCallback(() => {
+    const storedUsername = localStorage.getItem('username');
+    const token = localStorage.getItem('token');
+    
+    if (storedUsername && token) {
+      setUsername(storedUsername);
+      fetchUserInterests(storedUsername);
+    } else {
+      setUsername(null);
+      setUserInterests([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkLoginStatus();
+  }, [location, checkLoginStatus]);
+
   const handleGetStarted = () => {
-    navigate('/analysis');
+    if (username) {
+      navigate('/analysis');
+    } else {
+      navigate('/login');
+    }
   };
 
   return (
@@ -46,14 +61,14 @@ const Home = () => {
                 onClick={handleGetStarted}
                 className="mt-3"
               >
-                Let's Start
+                {username ? "Let's Start" : "Login to Start"}
               </Button>
             </Col>
           </Row>
         </Container>
       </section>
 
-      {/* User Interests Section (if logged in) */}
+      {/* User Interests Section (only if logged in) */}
       {username && userInterests.length > 0 && (
         <section className="py-5 bg-light">
           <Container>
@@ -197,20 +212,41 @@ const Home = () => {
                 Start analyzing destinations and make informed travel decisions today.
               </p>
               <div className="d-flex gap-3 justify-content-center flex-wrap">
-                <Button 
-                  variant="light" 
-                  size="lg" 
-                  onClick={() => navigate('/analysis')}
-                >
-                  Start Analysis
-                </Button>
-                <Button 
-                  variant="outline-light" 
-                  size="lg" 
-                  onClick={() => navigate('/compare')}
-                >
-                  Compare Destinations
-                </Button>
+                {username ? (
+                  <>
+                    <Button 
+                      variant="light" 
+                      size="lg" 
+                      onClick={() => navigate('/analysis')}
+                    >
+                      Start Analysis
+                    </Button>
+                    <Button 
+                      variant="outline-light" 
+                      size="lg" 
+                      onClick={() => navigate('/compare')}
+                    >
+                      Compare Destinations
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button 
+                      variant="light" 
+                      size="lg" 
+                      onClick={() => navigate('/login')}
+                    >
+                      Login to Continue
+                    </Button>
+                    <Button 
+                      variant="outline-light" 
+                      size="lg" 
+                      onClick={() => navigate('/register')}
+                    >
+                      Register Now
+                    </Button>
+                  </>
+                )}
               </div>
             </Col>
           </Row>

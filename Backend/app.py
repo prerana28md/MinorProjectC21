@@ -89,11 +89,23 @@ def register():
 
 @app.route('/interests', methods=['GET'])
 def get_interests():
-    # Get unique categories from the actual dataset
-    unique_categories = cities_df['category'].dropna().unique().tolist()
-    # Sort them for better user experience
-    unique_categories.sort()
-    return jsonify(unique_categories)
+    try:
+        # Get unique categories from the actual dataset
+        unique_categories = cities_df['category'].dropna().unique().tolist()
+        # Sort them for better user experience
+        unique_categories.sort()
+        return jsonify({
+            "status": "success",
+            "interests": unique_categories,
+            "count": len(unique_categories)
+        })
+    except Exception as e:
+        print(f"Error fetching interests: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": "Failed to fetch interests",
+            "error": str(e)
+        }), 500
 
 
 @app.route('/login', methods=['POST'])
@@ -173,12 +185,101 @@ def state_details(state_name):
     return jsonify(state_data)
 
 # Risk data for state
+# Risk data for state
 @app.route('/states/<state_name>/risk', methods=['GET'])
 def state_risk(state_name):
-    df = risk_df[risk_df['state'].str.lower() == state_name.lower()]
-    if df.empty:
-        abort(404)
-    return jsonify(df.iloc[0].to_dict())
+    try:
+        # Try multiple matching strategies for robust state name matching
+        # 1. Exact case-insensitive match
+        df = risk_df[risk_df['state'].str.strip().str.lower() == state_name.strip().lower()]
+        
+        # 2. If no match, try partial match
+        if df.empty:
+            df = risk_df[risk_df['state'].str.strip().str.lower().str.contains(state_name.strip().lower(), na=False)]
+        
+        # 3. Try with normalized spaces removed
+        if df.empty:
+            state_normalized = state_name.strip().lower().replace(' ', '')
+            df = risk_df[risk_df['state'].str.strip().str.lower().str.replace(' ', '') == state_normalized]
+        
+        if df.empty:
+            # Log available states for debugging
+            available_states = risk_df['state'].dropna().unique().tolist()
+            print(f"[DEBUG] No match for state_name='{state_name}'")
+            print(f"[DEBUG] Available states: {available_states}")
+            
+            # Return empty but valid response instead of 404
+            return jsonify({
+                'state': state_name,
+                'risk_index': 0,
+                'risks': {},
+                'health_alerts': 'No risk data available for this state',
+                'safety_suggestions': 'General travel precautions recommended',
+                'insurance_available': '',
+                'major_disaster_years': '',
+                'hotspot_districts': ''
+            })
+        
+        risk_data = df.iloc[0].to_dict()
+        
+        # Extract specific fields
+        health_alerts = risk_data.get('health_alerts', '')
+        safety_suggestions = risk_data.get('safety_suggestions', '')
+        
+        # Filter risk types - include ALL non-null, non-empty values
+        filtered_risks = {}
+        risk_columns = [
+            'flood_risk', 'landslide_risk', 'earthquake_zone', 
+            'crime_rate', 'accident_rate', 'cyclone_risk', 
+            'drought_risk', 'forest_fire_risk', 'sea_erosion_risk'
+        ]
+        
+        for col in risk_columns:
+            if col not in risk_data:
+                continue
+                
+            value = risk_data[col]
+            
+            # Skip only if value is null, undefined, or empty/NaN string
+            if pd.isna(value):
+                continue
+            
+            # Convert to string for checking
+            str_value = str(value).strip()
+            
+            # Skip empty strings or "nan" strings
+            if str_value == '' or str_value.lower() == 'nan':
+                continue
+            
+            # Include ALL other values (numbers including 0, and strings like "Zone III")
+            filtered_risks[col] = value
+        
+        return jsonify({
+            'state': risk_data.get('state', state_name),
+            'risk_index': risk_data.get('risk_index', 0),
+            'risks': filtered_risks,
+            'health_alerts': health_alerts if pd.notna(health_alerts) and str(health_alerts).strip() != '' else '',
+            'safety_suggestions': safety_suggestions if pd.notna(safety_suggestions) and str(safety_suggestions).strip() != '' else '',
+            'insurance_available': risk_data.get('insurance_available', ''),
+            'major_disaster_years': risk_data.get('major_disaster_years', ''),
+            'hotspot_districts': risk_data.get('hotspot_districts', '')
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] in state_risk endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'state': state_name,
+            'risk_index': 0,
+            'risks': {},
+            'health_alerts': 'Error loading risk data',
+            'safety_suggestions': 'General travel precautions recommended',
+            'insurance_available': '',
+            'major_disaster_years': '',
+            'hotspot_districts': ''
+        }), 200
+
 
 # Tourism trends from states_complete.csv based on actual visitor data
 @app.route('/states/<state_name>/tourism_trends', methods=['GET'])
@@ -206,17 +307,40 @@ def tourism_trends_data(state_name):
 # Cities in a state
 @app.route('/states/<state_name>/cities', methods=['GET'])
 def state_cities(state_name):
-    # Try exact match first
-    df = cities_df[cities_df['state_name'].str.lower() == state_name.lower()]
-    
-    # If no exact match, try partial match
-    if df.empty:
-        df = cities_df[cities_df['state_name'].str.lower().str.contains(state_name.lower(), na=False)]
-    
-    if df.empty:
-        # Return empty list instead of 404 to avoid breaking frontend
+    try:
+        # Try multiple matching strategies
+        # 1. Exact match (case-insensitive)
+        df = cities_df[cities_df['state_name'].str.lower() == state_name.lower()]
+        
+        # 2. If no exact match, try partial match
+        if df.empty:
+            df = cities_df[cities_df['state_name'].str.lower().str.contains(state_name.lower(), na=False)]
+        
+        # 3. If still empty, try with spaces removed
+        if df.empty:
+            state_normalized = state_name.lower().replace(' ', '')
+            df = cities_df[cities_df['state_name'].str.lower().str.replace(' ', '') == state_normalized]
+        
+        if df.empty:
+            # Log available states for debugging
+            available_states = cities_df['state_name'].unique().tolist()
+            print(f"No cities found for state: {state_name}")
+            print(f"Available states in cities.csv: {available_states}")
+            # Return empty array instead of 404 to avoid breaking frontend
+            return jsonify([])
+        
+        # Get unique cities from the dataframe
+        cities_list = df['city_name'].dropna().unique().tolist()
+        
+        # Sort alphabetically for better UX
+        cities_list.sort()
+        
+        print(f"Found {len(cities_list)} cities for state: {state_name}")
+        return jsonify(cities_list)
+        
+    except Exception as e:
+        print(f"Error in state_cities endpoint: {str(e)}")
         return jsonify([])
-    return jsonify(df.to_dict(orient='records'))
 
 # City details
 @app.route('/states/<state_name>/cities/<city_name>', methods=['GET'])
@@ -253,100 +377,81 @@ def search_places():
     return jsonify(filtered.to_dict(orient='records'))
 
 # Basic AI recommendation (rule-based example)
-@app.route('/recommend', methods=['GET', 'POST'])
+@app.route('/recommend', methods=['POST'])
 def recommend():
-    # -------------------------
-    # Case 1: GET method (browser or test)
-    # -------------------------
-    if request.method == 'GET':
+    try:
+        data = request.json
+        interests = data.get('interests', [])  # List of interests
+        month = data.get('month', '')
+        max_risk = data.get('max_risk', 1.0)
+        min_rating = data.get('min_rating', 0)
+
+        print(f"[RECOMMEND] Received {len(interests)} interests: {interests}")
+
+        if not interests:
+            return jsonify({'recommendations': [], 'message': 'No interests provided'})
+
+        # ✅ KEY FIX: Use .isin() to match ANY of the selected interests
+        filtered_cities = cities_df[cities_df['category'].isin(interests)].copy()
+        
+        print(f"[RECOMMEND] Found {len(filtered_cities)} cities matching interests")
+
+        # Apply month filter if specified
+        if month:
+            filtered_cities = filtered_cities[
+                filtered_cities['popular_months'].str.contains(month, case=False, na=False)
+            ]
+
+        # Apply risk filter
+        filtered_cities = filtered_cities[
+            (filtered_cities['risk_index'] * 10) <= max_risk
+        ]
+
+        # Apply rating filter
+        filtered_cities = filtered_cities[
+            filtered_cities['tourist_rating'] >= min_rating
+        ]
+
+        # Sort by rating (highest first)
+        filtered_cities = filtered_cities.sort_values('tourist_rating', ascending=False)
+
+        # Convert to list
+        recommendations = []
+        for _, row in filtered_cities.iterrows():
+            recommendations.append({
+                'state_name': row['state_name'],
+                'city_name': row['city_name'],
+                'category': row['category'],
+                'description': row.get('description', ''),
+                'tourist_rating': float(row['tourist_rating']) if pd.notna(row['tourist_rating']) else 0,
+                'risk_index': float(row['risk_index']) if pd.notna(row['risk_index']) else 0,
+                'best_time_to_visit': row.get('best_time_to_visit', ''),
+                'popular_months': row.get('popular_months', ''),
+                'latitude': float(row['latitude']) if pd.notna(row['latitude']) else 0,
+                'longitude': float(row['longitude']) if pd.notna(row['longitude']) else 0
+            })
+
+        print(f"[RECOMMEND] Returning {len(recommendations)} recommendations")
+
         return jsonify({
-            "message": "Use POST with JSON body like:",
-            "example": {
-                "interests": ["Hill Station", "Beach"],
-                "max_risk": 0.5,
-                "min_rating": 4.0
-            }
+            'recommendations': recommendations,
+            'count': len(recommendations)
         })
 
-    # -------------------------
-    # Case 2: POST method (actual AI-based recommendation)
-    # -------------------------
-    try:
-        data = request.get_json(force=True)
     except Exception as e:
-        return jsonify({"error": "Invalid JSON input", "details": str(e)}), 400
+        print(f"[ERROR] in recommend: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'recommendations': []}), 500
 
-    # Extract user preferences
-    interests = data.get('interests', [])
-    month = data.get('month', '')
-    max_risk = float(data.get('max_risk', 1.0))
-    min_rating = float(data.get('min_rating', 0))
 
-    # Create copy to filter
-    filtered = cities_df.copy()
-
-    # Filter by interests
-    if interests:
-        interest_set = set(i.lower() for i in interests)
-        if 'category' in filtered.columns:
-            filtered = filtered[filtered['category'].str.lower().isin(interest_set)]
-
-    # Filter by month if provided
-    if month:
-        m = month.lower()
-        # Check if the selected month is in popular_months or best_time_to_visit
-        month_mask = (
-            filtered['best_time_to_visit'].str.lower().str.contains(m, na=False) |
-            filtered['popular_months'].str.lower().str.contains(m, na=False)
-        )
-        filtered = filtered[month_mask]
-
-    # Filter by risk and rating
-    if 'risk_index' in filtered.columns:
-        filtered = filtered[filtered['risk_index'] <= max_risk]
-    if 'tourist_rating' in filtered.columns:
-        filtered = filtered[filtered['tourist_rating'] >= min_rating]
-
-    # If nothing found
-    if filtered.empty:
-        return jsonify({"message": "No recommendations found matching your preferences."}), 200
-
-    # Sort results: Highest rating, lowest risk
-    filtered = filtered.sort_values(['tourist_rating', 'risk_index'], ascending=[False, True])
-
-    # Convert any numpy datatypes to normal Python types
-    results = filtered.head(10).map(lambda x: x.item() if hasattr(x, 'item') else x)
-
-    # Return final recommendations
+@app.route('/debug/categories', methods=['GET'])
+def debug_categories():
+    categories = cities_df['category'].dropna().unique().tolist()
     return jsonify({
-        "total_recommendations": len(results),
-        "recommendations": results.to_dict(orient='records')
+        "total_categories": len(categories),
+        "categories": sorted(categories)
     })
-
-# Compare two states on selected metrics
-@app.route('/compare/states', methods=['GET'])
-def compare_states():
-    state1 = request.args.get('state1')
-    state2 = request.args.get('state2')
-    if not state1 or not state2:
-        return jsonify({"error": "Please provide state1 and state2 query params."}), 400
-
-    df1 = states_complete_df[states_complete_df['state_name'].str.lower() == state1.lower()]
-    df2 = states_complete_df[states_complete_df['state_name'].str.lower() == state2.lower()]
-    if df1.empty or df2.empty:
-        return jsonify({"error": "One or both states not found."}), 404
-
-    keys = [col for col in df1.columns if col not in ['state_name'] and not col.startswith('tourism_')]
-    comparison = {
-        key: {
-            state1: df1.iloc[0][key].item() if hasattr(df1.iloc[0][key], 'item') else df1.iloc[0][key],
-            state2: df2.iloc[0][key].item() if hasattr(df2.iloc[0][key], 'item') else df2.iloc[0][key]
-        } for key in keys
-    }
-
-    return jsonify(comparison)
-
-
 # Compare two cities based on risk and rating
 @app.route('/compare/cities', methods=['GET'])
 def compare_cities():
@@ -434,13 +539,100 @@ def _ensure_api_key():
     return True, key
 
 # Mapping local/alternative city names to OpenWeatherMap recognized names
+# City name mapping for OpenWeatherMap API
 city_map = {
+    # Karnataka
     "Mysuru": "Mysore",
     "Bengaluru": "Bangalore",
+    "Kodagu": "Madikeri",  # Hill headquarters, covers "Coorg"
+    "Coorg": "Madikeri",
+
+    # Kerala
     "Thiruvananthapuram": "Trivandrum",
+    "Kochi": "Cochin",
+    "Alappuzha": "Alleppey",
+    "Alleppey": "Alappuzha",
+
+    # Tamil Nadu
+    "Chennai": "Madras",    # "Chennai" is now canonical, "Madras" is legacy
+    "Madurai": "Madurai",
+    "Kanyakumari": "Kanyakumari",
+    "Ooty": "Ootacamund",
+    "Ootacamund": "Ooty",
+
+    # Delhi/NCR
     "New Delhi": "Delhi",
-    # Add more mappings if needed
+
+    # Maharashtra
+    "Mumbai": "Bombay",
+    "Pune": "Poona",
+    "Aurangabad": "Aurangabad",
+
+    # Uttar Pradesh
+    "Prayagraj": "Allahabad",
+    "Varanasi": "Benares",
+    "Agra": "Agra",
+
+    # Rajasthan
+    "Jaipur": "Jaipur",
+    "Udaipur": "Udaipur",
+    "Jodhpur": "Jodhpur",
+    "Jaisalmer": "Jaisalmer",
+
+    # West Bengal
+    "Kolkata": "Calcutta",
+    "Darjeeling": "Darjeeling",
+
+    # Himachal Pradesh
+    "Shimla": "Simla",
+    "Manali": "Manali",
+    "Dharamshala": "Dharamsala",
+
+    # Uttarakhand
+    "Dehradun": "Dehra Dun",
+    "Rishikesh": "Rishikesh",
+    "Nainital": "Nainital",
+    "Mussoorie": "Mussoorie",
+    "Haridwar": "Hardwar",
+
+    # Goa
+    "Panaji": "Panjim",
+    "Panjim": "Panaji",
+
+    # Gujarat
+    "Ahmedabad": "Ahmadabad",
+    "Vadodara": "Vadodara",
+
+    # Other states and notable cities
+    "Hyderabad": "Hyderabad",
+    "Visakhapatnam": "Vishakhapatnam",
+    "Vijayawada": "Bezawada",
+
+    "Amritsar": "Amritsar",
+    "Chandigarh": "Chandigarh",
+    "Bhubaneswar": "Bhubaneshwar",
+    "Puri": "Purī",
+    "Gangtok": "Gangtok",
+    "Guwahati": "Gauhati",
+    "Imphal": "Imphal",
+    "Shillong": "Sohra",  # Also handles Cherrapunji as Sohra
+    "Aizawl": "Aizawl",
+    "Kohima": "Kohima",
+    "Itanagar": "Itanagar",
+    "Agartala": "Agartala",
+    "Patna": "Patna",
+    "Ranchi": "Ranchi",
+    "Jamshedpur": "Tatanagar",
+    "Jagdalpur": "Jagdalpur",
+
+    # Sikkim
+    "Gangtok": "Gangtok",
+
+    # Common variations
+    "Pondicherry": "Puducherry",
+    "Orissa": "Odisha"
 }
+
 
 # Representative city for each state (used for state-level weather)
 state_city_map = {
@@ -478,19 +670,27 @@ state_city_map = {
 # ---------------------------------------------
 # 🔹 WEATHER FOR A CITY
 # ---------------------------------------------
+# ---------------------------------------------
+# 🔹 WEATHER FOR A CITY
+# ---------------------------------------------
 @app.route('/weather/city/<city_name>', methods=['GET'])
 def get_city_weather(city_name):
-    city_api_name = city_map.get(city_name.title(), city_name.title())
+    # Clean up city name - remove parentheses and extra content
+    clean_city = city_name.split('(')[0].strip()  # "Coorg (Kodagu)" -> "Coorg"
+    
+    # Map to API-compatible name
+    api_city_name = city_map.get(clean_city, clean_city)
+    
     try:
         ok, key_or_msg = _ensure_api_key()
         if not ok:
             return jsonify({"error": "Missing API key", "message": key_or_msg}), 500
 
         url = (
-            f"http://api.openweathermap.org/data/2.5/weather?q={city_api_name},IN"
+            f"http://api.openweathermap.org/data/2.5/weather?q={api_city_name},IN"
             f"&appid={key_or_msg}&units=metric"
         )
-        # Simple retry for transient network issues
+        
         try_count = 0
         res = None
         while try_count < 2:
@@ -502,29 +702,27 @@ def get_city_weather(city_name):
                 try_count += 1
                 if try_count >= 2:
                     raise
+        
         data = {}
         try:
             data = res.json()
         except Exception:
-            # Non-JSON response
             return jsonify({"error": "Unexpected response from weather provider", "status_code": res.status_code}), 502
 
-        # Handle invalid API key specifically
         if res.status_code == 401:
-            # Pass along provider message but avoid exposing sensitive details
             provider_msg = data.get('message', 'Unauthorized')
             return jsonify({
                 "error": "Invalid or unauthorized API key for OpenWeatherMap.",
                 "provider_message": provider_msg,
-                "help": "Verify your WEATHER_API_KEY / OPENWEATHER_API_KEY environment variable. See https://openweathermap.org/faq#error401"
+                "help": "Verify your WEATHER_API_KEY / OPENWEATHER_API_KEY environment variable."
             }), 401
 
         if res.status_code != 200 or "main" not in data:
-            # Log the response body to help debugging (kept in server logs)
             app.logger.debug('OpenWeatherMap failed: status=%s body=%s', res.status_code, data)
             return jsonify({
                 "error": "Weather data not found",
-                "details": data
+                "details": data,
+                "searched_city": api_city_name
             }), 404
 
         weather = {
@@ -532,13 +730,16 @@ def get_city_weather(city_name):
             "temperature": round(data["main"]["temp"], 1),
             "feels_like": round(data["main"]["feels_like"], 1),
             "humidity": data["main"]["humidity"],
+            "pressure": data["main"].get("pressure", 0),
             "condition": data["weather"][0]["description"].title(),
-            "wind_speed": data["wind"]["speed"]
+            "wind_speed": data["wind"]["speed"],
+            "visibility": data.get("visibility", 0) / 1000 if data.get("visibility") else 0,
+            "clouds": data.get("clouds", {}).get("all", 0)
         }
         return jsonify(weather)
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "searched_city": api_city_name}), 500
 
 # ---------------------------------------------
 # 🔹 WEATHER FOR A STATE (based on representative city)
@@ -559,7 +760,7 @@ def get_state_weather(state_name):
             f"http://api.openweathermap.org/data/2.5/weather?q={city_api_name},IN"
             f"&appid={key_or_msg}&units=metric"
         )
-        # Simple retry for transient network issues
+        
         try_count = 0
         res = None
         while try_count < 2:
@@ -571,6 +772,7 @@ def get_state_weather(state_name):
                 try_count += 1
                 if try_count >= 2:
                     raise
+        
         data = {}
         try:
             data = res.json()
@@ -582,7 +784,7 @@ def get_state_weather(state_name):
             return jsonify({
                 "error": "Invalid or unauthorized API key for OpenWeatherMap.",
                 "provider_message": provider_msg,
-                "help": "Verify your WEATHER_API_KEY / OPENWEATHER_API_KEY environment variable. See https://openweathermap.org/faq#error401"
+                "help": "Verify your WEATHER_API_KEY / OPENWEATHER_API_KEY environment variable."
             }), 401
 
         if res.status_code != 200 or "main" not in data:
@@ -598,14 +800,16 @@ def get_state_weather(state_name):
             "temperature": round(data["main"]["temp"], 1),
             "feels_like": round(data["main"]["feels_like"], 1),
             "humidity": data["main"]["humidity"],
+            "pressure": data["main"].get("pressure", 0),  # Added pressure
             "condition": data["weather"][0]["description"].title(),
-            "wind_speed": data["wind"]["speed"]
+            "wind_speed": data["wind"]["speed"],
+            "visibility": data.get("visibility", 0) / 1000 if data.get("visibility") else 0,  # Convert to km
+            "clouds": data.get("clouds", {}).get("all", 0)
         }
         return jsonify(weather)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 # ML
 from sklearn.linear_model import LinearRegression

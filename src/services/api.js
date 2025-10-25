@@ -55,7 +55,8 @@ export const dataAPI = {
   getStateRisk: (stateName) => api.get(`/states/${stateName}/risk`),
   getStateTourismTrends: (stateName) => api.get(`/states/${stateName}/tourism_trends`),
   getCityDetails: (stateName, cityName) => api.get(`/states/${stateName}/cities/${cityName}`),
-  getInterests: () => api.get('/interests'),
+    // Get interests from the dedicated /interests endpoint
+    getInterests: () => api.get('/interests'),
   getPredictTrends: (stateName) => api.get(`/predict_trend/${stateName}`),
   getPredictTrendsByCategory: (stateName, category) => api.get(`/predict_trend/${stateName}/${category}`),
 };

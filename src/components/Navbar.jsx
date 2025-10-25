@@ -4,20 +4,34 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 
 const Navbar = () => {
   const [username, setUsername] = useState(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Check login status on mount and when location changes
   useEffect(() => {
+    checkLoginStatus();
+  }, [location]);
+
+  const checkLoginStatus = () => {
     const storedUsername = localStorage.getItem('username');
-    if (storedUsername) {
+    const token = localStorage.getItem('token');
+    
+    if (storedUsername && token) {
       setUsername(storedUsername);
+      setIsLoggedIn(true);
+    } else {
+      setUsername(null);
+      setIsLoggedIn(false);
     }
-  }, []);
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('username');
+    localStorage.removeItem('currentUser');
     setUsername(null);
+    setIsLoggedIn(false);
     navigate('/');
   };
 
@@ -35,22 +49,29 @@ const Navbar = () => {
         <BSNavbar.Toggle aria-controls="basic-navbar-nav" />
         <BSNavbar.Collapse id="basic-navbar-nav">
           <Nav className="me-auto">
-            <Nav.Link as={Link} to="/" className={isActive('/') ? 'active' : ''}>
+            
+            
+            {/* Only show these links when user is logged in */}
+            {isLoggedIn && (
+              <>
+                <Nav.Link as={Link} to="/" className={isActive('/') ? 'active' : ''}>
               Home
             </Nav.Link>
-            <Nav.Link as={Link} to="/analysis" className={isActive('/analysis') ? 'active' : ''}>
-              Analysis
-            </Nav.Link>
-            <Nav.Link as={Link} to="/compare" className={isActive('/compare') ? 'active' : ''}>
-              Compare
-            </Nav.Link>
-            <Nav.Link as={Link} to="/recommendation" className={isActive('/recommendation') ? 'active' : ''}>
-              Recommendation
-            </Nav.Link>
+                <Nav.Link as={Link} to="/analysis" className={isActive('/analysis') ? 'active' : ''}>
+                  Analysis
+                </Nav.Link>
+                <Nav.Link as={Link} to="/compare" className={isActive('/compare') ? 'active' : ''}>
+                  Compare
+                </Nav.Link>
+                <Nav.Link as={Link} to="/recommendation" className={isActive('/recommendation') ? 'active' : ''}>
+                  Recommendation
+                </Nav.Link>
+              </>
+            )}
           </Nav>
           
           <Nav>
-            {username ? (
+            {isLoggedIn ? (
               <Dropdown>
                 <Dropdown.Toggle variant="outline-light" id="dropdown-basic">
                   👤 {username}

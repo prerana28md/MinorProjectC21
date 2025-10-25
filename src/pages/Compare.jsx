@@ -1,7 +1,28 @@
 import React, { useState, useEffect } from 'react';
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js';
 import { Container, Row, Col, Form, Button, Alert, Spinner, Tabs, Tab } from 'react-bootstrap';
 import { dataAPI, aiAPI, mockDataAPI, mockAiAPI } from '../services/api';
 import CompareCard from '../components/CompareCard';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 const Compare = () => {
   const [states, setStates] = useState([]);
@@ -249,81 +270,50 @@ const Compare = () => {
     }
 
     const years = [2020, 2021, 2022, 2023, 2024, 2025];
-    const state1Visitors = years.map(year => state1_data.visitors[year] || 0);
-    const state2Visitors = years.map(year => state2_data.visitors[year] || 0);
-    
-    const maxVisitors = Math.max(...state1Visitors, ...state2Visitors);
-    const minVisitors = Math.min(...state1Visitors, ...state2Visitors);
-    const range = maxVisitors - minVisitors;
+    const state1Visitors = years.map(year => Number(state1_data.visitors[year] || 0));
+    const state2Visitors = years.map(year => Number(state2_data.visitors[year] || 0));
+
+    const data = {
+      labels: years.map(String),
+      datasets: [
+        {
+          label: state1_data.name,
+          data: state1Visitors,
+          borderColor: '#007bff',
+          backgroundColor: 'rgba(0,123,255,0.1)',
+          tension: 0.2,
+          fill: true,
+        },
+        {
+          label: state2_data.name,
+          data: state2Visitors,
+          borderColor: '#28a745',
+          backgroundColor: 'rgba(40,167,69,0.1)',
+          tension: 0.2,
+          fill: true,
+        }
+      ]
+    };
+
+    const options = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top' },
+        title: { display: true, text: 'Visitor Trends Comparison (2020-2025)' }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: (v) => v >= 1000 ? v.toLocaleString() : v } }
+      }
+    };
 
     return (
       <div className="card">
-        <div className="card-body">
+        <div className="card-body" style={{ height: 360 }}>
           <h6 className="card-title">Visitor Trends Comparison (2020-2025)</h6>
           <p className="text-muted small">Annual visitor data comparison between the two states</p>
-          
-          {/* Bar Chart */}
-          <div className="comparison-chart" style={{ height: '200px', padding: '20px 0' }}>
-            <div className="d-flex align-items-end justify-content-between" style={{ height: '160px' }}>
-              {years.map((year, index) => {
-                const state1Height = range > 0 ? ((state1Visitors[index] - minVisitors) / range * 100) : 50;
-                const state2Height = range > 0 ? ((state2Visitors[index] - minVisitors) / range * 100) : 50;
-                
-                return (
-                  <div key={year} className="d-flex flex-column align-items-center" style={{ flex: 1, minWidth: '50px' }}>
-                    {/* State 1 Bar */}
-                    <div
-                      className="bar me-1"
-                      style={{
-                        height: `${state1Height}%`,
-                        width: '20px',
-                        backgroundColor: '#007bff',
-                        borderRadius: '2px 2px 0 0',
-                        marginBottom: '4px',
-                        transition: 'all 0.3s ease',
-                        cursor: 'pointer'
-                      }}
-                      title={`${state1_data.name} ${year}: ${state1Visitors[index].toLocaleString()} visitors`}
-                    ></div>
-                    
-                    {/* State 2 Bar */}
-                    <div
-                      className="bar"
-                      style={{
-                        height: `${state2Height}%`,
-                        width: '20px',
-                        backgroundColor: '#28a745',
-                        borderRadius: '2px 2px 0 0',
-                        marginBottom: '8px',
-                        transition: 'all 0.3s ease',
-                        cursor: 'pointer'
-                      }}
-                      title={`${state2_data.name} ${year}: ${state2Visitors[index].toLocaleString()} visitors`}
-                    ></div>
-                    
-                    <div className="text-center">
-                      <div className="fw-bold" style={{ fontSize: '0.7rem', color: '#333' }}>
-                        {year}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Legend */}
-          <div className="mt-3">
-            <div className="d-flex justify-content-center gap-4">
-              <div className="d-flex align-items-center">
-                <div className="me-2" style={{ width: '12px', height: '12px', backgroundColor: '#007bff', borderRadius: '2px' }}></div>
-                <small className="text-muted">{state1_data.name}</small>
-              </div>
-              <div className="d-flex align-items-center">
-                <div className="me-2" style={{ width: '12px', height: '12px', backgroundColor: '#28a745', borderRadius: '2px' }}></div>
-                <small className="text-muted">{state2_data.name}</small>
-              </div>
-            </div>
+          <div style={{ height: 260 }}>
+            <Line data={data} options={options} />
           </div>
 
           {/* Summary Stats */}

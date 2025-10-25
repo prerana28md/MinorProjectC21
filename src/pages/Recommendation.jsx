@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Form, Button, Alert, Spinner, Table } from 'react-bootstrap';
-import { aiAPI, weatherAPI, mockAiAPI, dataAPI } from '../services/api';
+import { Container, Row, Col, Form, Button, Alert, Spinner, Table, Badge } from 'react-bootstrap';
+import axios from 'axios';
 import WeatherCard from '../components/WeatherCard';
+
+const API_BASE_URL = 'http://127.0.0.1:5000';
 
 const Recommendation = () => {
   const [interests, setInterests] = useState([]);
@@ -11,6 +13,8 @@ const Recommendation = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [weatherData, setWeatherData] = useState({});
+  const [userPreferences, setUserPreferences] = useState(null);
+  const [autoLoadDone, setAutoLoadDone] = useState(false);
 
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -19,33 +23,98 @@ const Recommendation = () => {
 
   useEffect(() => {
     fetchInterests();
-    testBackendConnection();
+    loadUserPreferences();
   }, []);
 
-  const testBackendConnection = async () => {
+  const loadUserPreferences = () => {
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+      try {
+        const user = JSON.parse(savedUser);
+        setUserPreferences(user);
+        
+        if (user.interests && Array.isArray(user.interests) && user.interests.length > 0) {
+          setSelectedInterests(user.interests);
+          
+          if (user.preferred_month) {
+            setSelectedMonth(user.preferred_month);
+          }
+          
+          // AUTO-LOAD recommendations immediately
+          if (!autoLoadDone) {
+            setTimeout(() => {
+              autoFetchRecommendations(user.interests, user.preferred_month || '');
+            }, 500);
+            setAutoLoadDone(true);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading user preferences:', err);
+      }
+    }
+  };
+
+  const autoFetchRecommendations = async (interests, month) => {
+    if (!interests || interests.length === 0) return;
+
+    setLoading(true);
+    setError(null);
+
     try {
-      console.log('Testing backend connection...');
-      const response = await dataAPI.getStates();
-      console.log('Backend connection test successful:', response.data?.length || 0, 'states found');
+      const requestData = {
+        interests: interests,
+        month: month || '',
+        max_risk: 10.0,
+        min_rating: 0
+      };
+      
+      const response = await axios.post(`${API_BASE_URL}/recommend`, requestData);
+      const recs = response.data.recommendations || [];
+      
+      const sortedRecs = recs.sort((a, b) => {
+        const ratingA = a.tourist_rating || a.rating || 0;
+        const ratingB = b.tourist_rating || b.rating || 0;
+        return ratingB - ratingA;
+      });
+      
+      setRecommendations(sortedRecs);
+      
+      if (sortedRecs.length === 0) {
+        setError('No destinations found matching your interests. Try different preferences.');
+      }
     } catch (err) {
-      console.log('Backend connection test failed:', err);
+      setError('Failed to load recommendations.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUseSavedPreferences = () => {
+    if (userPreferences && userPreferences.interests && userPreferences.interests.length > 0) {
+      setSelectedInterests(userPreferences.interests);
+      setSelectedMonth(userPreferences.preferred_month || '');
+      
+      setTimeout(() => {
+        autoFetchRecommendations(userPreferences.interests, userPreferences.preferred_month || '');
+      }, 100);
     }
   };
 
   const fetchInterests = async () => {
     try {
-      // Try to fetch interests from backend
-      console.log('Fetching interests from backend...');
-      const response = await dataAPI.getInterests();
-      console.log('Interests response:', response.data);
-      setInterests(response.data);
+      const response = await axios.get(`${API_BASE_URL}/interests`);
+      if (response.data && response.data.status === 'success') {
+        setInterests(response.data.interests || []);
+      } else {
+        setInterests([]);
+      }
     } catch (err) {
-      console.log('Error fetching interests:', err);
-      console.log('Using fallback interests');
-      // Fallback to hardcoded interests if backend fails
       const fallbackInterests = [
-        'Hill Station', 'Beach', 'Heritage', 'Religious', 'Wildlife', 
-        'Nature', 'Cultural', 'Historical', 'Adventure', 'Spiritual'
+        'Adventure', 'Backwaters', 'Beach', 'Border Town', 'Capital',
+        'Commercial', 'Crafts Village', 'Cultural', 'Heritage', 'Hill Station',
+        'Historical', 'Luxury', 'Mountain Pass', 'Mountain Village', 
+        'Natural Landmark', 'Nature', 'Religious', 'Remote Valley',
+        'Spiritual', 'Town', 'Tribal', 'Urban', 'Valley', 'Village', 'Wildlife'
       ];
       setInterests(fallbackInterests);
     }
@@ -75,32 +144,36 @@ const Recommendation = () => {
       const requestData = {
         interests: selectedInterests,
         month: selectedMonth,
-        max_risk: 1.0,
+        max_risk: 10.0,
         min_rating: 0
       };
       
-      console.log('Sending recommendation request:', requestData);
-      const response = await aiAPI.postRecommendations(requestData);
-      console.log('Recommendation response:', response.data);
-      console.log('Recommendations array:', response.data.recommendations);
-      console.log('Recommendations length:', response.data.recommendations?.length || 0);
-      setRecommendations(response.data.recommendations || []);
+      const response = await axios.post(`${API_BASE_URL}/recommend`, requestData);
+      const recs = response.data.recommendations || [];
+      
+      const sortedRecs = recs.sort((a, b) => {
+        const ratingA = a.tourist_rating || a.rating || 0;
+        const ratingB = b.tourist_rating || b.rating || 0;
+        return ratingB - ratingA;
+      });
+      
+      setRecommendations(sortedRecs);
+      
+      if (sortedRecs.length === 0) {
+        setError('No destinations found matching your interests. Try selecting different interests or removing the month filter.');
+      }
     } catch (err) {
-      console.log('Error getting recommendations:', err);
-      console.log('Error details:', err.response?.data || err.message);
-      console.log('Using mock data for recommendations');
-      const mockResponse = await mockAiAPI.getRecommendations();
-      setRecommendations(mockResponse.data.recommendations || []);
+      setError('Failed to get recommendations. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleViewWeather = async (cityName) => {
-    if (weatherData[cityName]) return; // Already fetched
+    if (weatherData[cityName]) return;
 
     try {
-      const response = await weatherAPI.getCityWeather(cityName);
+      const response = await axios.get(`${API_BASE_URL}/weather/city/${cityName}`);
       setWeatherData(prev => ({
         ...prev,
         [cityName]: response.data
@@ -113,7 +186,7 @@ const Recommendation = () => {
   const getRatingStars = (rating) => {
     const stars = [];
     const fullStars = Math.floor(rating);
-    const hasHalfStar = rating % 1 !== 0;
+    const hasHalfStar = rating % 1 >= 0.5;
 
     for (let i = 0; i < fullStars; i++) {
       stars.push('⭐');
@@ -121,131 +194,87 @@ const Recommendation = () => {
     if (hasHalfStar) {
       stars.push('⭐');
     }
-    return stars.join('');
+    return stars.join('') || '☆';
   };
 
   const getRiskBadge = (riskIndex) => {
-    if (riskIndex <= 2) return { variant: 'success', text: 'Low Risk' };
-    if (riskIndex <= 4) return { variant: 'warning', text: 'Medium Risk' };
+    const scaled = (riskIndex || 0) * 10;
+    if (scaled <= 3) return { variant: 'success', text: 'Low Risk' };
+    if (scaled <= 6) return { variant: 'warning', text: 'Medium Risk' };
     return { variant: 'danger', text: 'High Risk' };
   };
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header bg-primary text-white py-4">
         <Container>
           <h1>Get Recommendations</h1>
-          <p>Discover destinations based on your interests and preferences</p>
+          <p className="mb-0">Discover destinations based on your interests and preferences</p>
         </Container>
       </div>
 
       <Container className="py-5">
-        {/* Selection Form */}
-        <Row className="mb-5">
-          <Col lg={8} className="mx-auto">
-            <div className="card">
-              <div className="card-body">
-                <h5 className="card-title mb-4">Tell us your preferences</h5>
-                
-                {/* Interests Selection */}
-                <Form.Group className="mb-4">
-                  <Form.Label>Select your interests (choose multiple)</Form.Label>
-                  <div className="row g-2">
-                    {interests.map((interest, index) => (
-                      <Col md={4} sm={6} key={index}>
-                        <Form.Check
-                          type="checkbox"
-                          id={`interest-${index}`}
-                          label={interest}
-                          checked={selectedInterests.includes(interest)}
-                          onChange={() => handleInterestChange(interest)}
-                        />
-                      </Col>
-                    ))}
-                  </div>
-                </Form.Group>
-
-                {/* Month Selection */}
-                <Form.Group className="mb-4">
-                  <Form.Label>Preferred travel month (optional)</Form.Label>
-                  <Form.Select
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                  >
-                    <option value="">Any month</option>
-                    {months.map((month, index) => (
-                      <option key={index} value={month}>
-                        {month}
-                      </option>
-                    ))}
-                  </Form.Select>
-                </Form.Group>
-
-                <div className="text-center">
-                  <Button 
-                    variant="primary" 
-                    size="lg" 
-                    onClick={handleGetRecommendations}
-                    disabled={selectedInterests.length === 0 || loading}
-                    className="me-2"
-                  >
-                    {loading ? (
-                      <>
-                        <Spinner animation="border" size="sm" className="me-2" />
-                        Getting Recommendations...
-                      </>
-                    ) : (
-                      'Get Recommendations'
-                    )}
-                  </Button>
-                  
-                  {/* Debug button */}
-                  {process.env.NODE_ENV === 'development' && (
+        {/* Top Section - Auto-loaded Recommendations */}
+        {userPreferences && userPreferences.interests && userPreferences.interests.length > 0 && (
+          <Row className="mb-4">
+            <Col>
+              <div className="card shadow-sm border-success">
+                <div className="card-body p-3">
+                  <div className="d-flex align-items-center justify-content-between flex-wrap gap-3">
+                    <div className="d-flex align-items-center">
+                      <i className="fas fa-star fa-2x text-success me-3"></i>
+                      <div>
+                        <strong className="d-block">Your Personalized Recommendations</strong>
+                        <small className="text-muted">
+                          Based on: <strong>{userPreferences.interests.join(', ')}</strong>
+                          {userPreferences.preferred_month && (
+                            <span> | <strong>{userPreferences.preferred_month}</strong></span>
+                          )}
+                        </small>
+                      </div>
+                    </div>
                     <Button 
-                      variant="outline-secondary" 
-                      size="sm" 
-                      onClick={async () => {
-                        console.log('Manual API test...');
-                        try {
-                          const response = await aiAPI.postRecommendations({
-                            interests: ['Adventure'],
-                            max_risk: 1.0,
-                            min_rating: 0
-                          });
-                          console.log('Manual test response:', response.data);
-                        } catch (err) {
-                          console.log('Manual test error:', err);
-                        }
-                      }}
+                      variant="success" 
+                      size="lg" 
+                      onClick={handleUseSavedPreferences}
+                      disabled={loading}
+                      className="px-4"
                     >
-                      Test API
+                      {loading ? (
+                        <>
+                          <Spinner animation="border" size="sm" className="me-2" />
+                          Refreshing...
+                        </>
+                      ) : (
+                        <>
+                          <i className="fas fa-sync-alt me-2"></i>
+                          Refresh
+                        </>
+                      )}
                     </Button>
-                  )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </Col>
-        </Row>
+            </Col>
+          </Row>
+        )}
+
+        {/* Loading State */}
+        {loading && recommendations.length === 0 && (
+          <Row className="mb-4">
+            <Col className="text-center py-5">
+              <Spinner animation="border" variant="primary" />
+              <p className="mt-3 text-muted">Loading your personalized recommendations...</p>
+            </Col>
+          </Row>
+        )}
 
         {/* Error Alert */}
         {error && (
           <Row className="mb-4">
             <Col>
-              <Alert variant="danger">{error}</Alert>
-            </Col>
-          </Row>
-        )}
-
-        {/* Debug Information */}
-        {process.env.NODE_ENV === 'development' && (
-          <Row className="mb-4">
-            <Col>
-              <Alert variant="info">
-                <strong>Debug Info:</strong><br/>
-                Available interests: {interests.length} options<br/>
-                Selected interests: {selectedInterests.join(', ') || 'None'}<br/>
-                Selected month: {selectedMonth || 'Any month'}<br/>
-                Recommendations found: {recommendations.length}
+              <Alert variant="danger" dismissible onClose={() => setError(null)}>
+                {error}
               </Alert>
             </Col>
           </Row>
@@ -255,66 +284,60 @@ const Recommendation = () => {
         {recommendations.length > 0 && (
           <Row className="mb-5">
             <Col>
-              <div className="card">
+              <div className="card shadow">
                 <div className="card-body">
-                  <h5 className="card-title mb-4">Recommended Destinations</h5>
+                  <h5 className="card-title mb-3">
+                    <i className="fas fa-map-marked-alt text-primary me-2"></i>
+                    Recommended Destinations
+                    <Badge bg="secondary" className="ms-2">{recommendations.length} found</Badge>
+                  </h5>
+                  <p className="text-muted small mb-3">
+                    Showing destinations matching: <strong>{selectedInterests.join(', ')}</strong>
+                  </p>
                   <div className="table-responsive">
-                    <Table hover>
-                      <thead>
+                    <Table hover className="mb-0">
+                      <thead className="table-light">
                         <tr>
+                          <th>#</th>
                           <th>State</th>
                           <th>City</th>
+                          <th>Category</th>
                           <th>Rating</th>
-                          <th>Risk Index</th>
-                          <th>Best Month</th>
+                          <th>Risk Level</th>
+                          <th>Best Time</th>
                           <th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {recommendations.map((rec, index) => {
                           const riskBadge = getRiskBadge(rec.risk_index || rec.risk || 0);
+                          const scaledRisk = ((rec.risk_index || rec.risk || 0) * 10).toFixed(1);
+                          
                           return (
                             <tr key={index}>
-                              <td>
-                                <strong>{rec.state_name || rec.state}</strong>
-                              </td>
-                              <td>
-                                <div>
-                                  <strong>{rec.city_name || rec.city}</strong>
-                                  <div className="small text-muted">
-                                    <span className="badge bg-secondary me-1">{rec.category}</span>
-                                  </div>
-                                </div>
-                              </td>
+                              <td className="fw-bold">{index + 1}</td>
+                              <td><strong>{rec.state_name || rec.state || 'N/A'}</strong></td>
+                              <td><strong>{rec.city_name || rec.city || 'N/A'}</strong></td>
+                              <td><Badge bg="info">{rec.category || 'N/A'}</Badge></td>
                               <td>
                                 <div className="d-flex align-items-center">
-                                  <span className="me-2">
-                                    {getRatingStars(rec.tourist_rating || rec.rating || 0)}
-                                  </span>
-                                  <span className="fw-bold">
-                                    {(rec.tourist_rating || rec.rating || 0).toFixed(1)}
-                                  </span>
+                                  <span className="me-2">{getRatingStars(rec.tourist_rating || rec.rating || 0)}</span>
+                                  <span className="fw-bold">{(rec.tourist_rating || rec.rating || 0).toFixed(1)}</span>
                                 </div>
                               </td>
                               <td>
-                                <span className={`badge bg-${riskBadge.variant}`}>
-                                  {rec.risk_index || rec.risk || 0}/10
-                                </span>
+                                <Badge bg={riskBadge.variant}>{scaledRisk}/10</Badge>
                                 <div className="small text-muted">{riskBadge.text}</div>
                               </td>
                               <td>
-                                <div>
-                                  <div className="fw-bold">{rec.best_time_to_visit || rec.best_month || 'Year-round'}</div>
-                                  <div className="small text-muted">Popular: {rec.popular_months || 'N/A'}</div>
+                                <div className="small">
+                                  <div className="fw-bold">{rec.best_time_to_visit || 'Year-round'}</div>
+                                  {rec.popular_months && <div className="text-muted">Popular: {rec.popular_months}</div>}
                                 </div>
                               </td>
                               <td>
-                                <Button
-                                  variant="outline-primary"
-                                  size="sm"
-                                  onClick={() => handleViewWeather(rec.city_name || rec.city)}
-                                >
-                                  View Weather
+                                <Button variant="outline-primary" size="sm" onClick={() => handleViewWeather(rec.city_name || rec.city)}>
+                                  <i className="fas fa-cloud-sun me-1"></i>Weather
                                 </Button>
                               </td>
                             </tr>
@@ -331,42 +354,89 @@ const Recommendation = () => {
 
         {/* Weather Cards */}
         {Object.keys(weatherData).length > 0 && (
-          <Row className="g-4">
-            <Col>
-              <h5 className="mb-4">Weather Information</h5>
-            </Col>
-          </Row>
+          <>
+            <Row className="mb-3">
+              <Col><h5><i className="fas fa-cloud-sun text-primary me-2"></i>Weather Information</h5></Col>
+            </Row>
+            <Row className="g-4 mb-5">
+              {Object.entries(weatherData).map(([cityName, weather]) => (
+                <Col md={6} lg={4} key={cityName}>
+                  <WeatherCard cityName={cityName} title={`Weather in ${cityName}`} />
+                </Col>
+              ))}
+            </Row>
+          </>
         )}
-        
-        <Row className="g-4">
-          {Object.entries(weatherData).map(([cityName, weather]) => (
-            <Col md={6} lg={4} key={cityName}>
-              <WeatherCard 
-                cityName={cityName}
-                title={`Weather in ${cityName}`}
-              />
-            </Col>
-          ))}
-        </Row>
 
-        {/* No Results */}
-        {recommendations.length === 0 && !loading && !error && (
-          <Row>
-            <Col className="text-center py-5">
-              <div className="fs-1 text-muted mb-3">🎯</div>
-              <h5>No recommendations found</h5>
-              <p className="text-muted">
-                Try adjusting your interests or travel month. The system couldn't find destinations matching your current preferences.
-              </p>
-              <div className="mt-3">
-                <small className="text-muted">
-                  <strong>Selected interests:</strong> {selectedInterests.join(', ') || 'None'}<br/>
-                  <strong>Selected month:</strong> {selectedMonth || 'Any month'}
-                </small>
+        {/* Explore More Section - Optional Custom Search */}
+        <Row className="mb-5">
+          <Col lg={10} className="mx-auto">
+            <div className="card shadow">
+              <div className="card-body p-4">
+                <h5 className="card-title mb-3">
+                  <i className="fas fa-compass me-2"></i>
+                  Explore More Destinations
+                </h5>
+                <p className="text-muted small mb-4">
+                  Want to discover places beyond your saved interests? Customize your search below.
+                </p>
+                
+                <Form.Group className="mb-4">
+                  <Form.Label className="fw-bold">
+                    Select interests
+                    <small className="text-muted ms-2">({selectedInterests.length} selected)</small>
+                  </Form.Label>
+                  <div className="row g-2">
+                    {interests.map((interest, index) => (
+                      <Col md={3} sm={6} key={index}>
+                        <Form.Check
+                          type="checkbox"
+                          id={`interest-${index}`}
+                          label={interest}
+                          checked={selectedInterests.includes(interest)}
+                          onChange={() => handleInterestChange(interest)}
+                          className="user-select-none"
+                        />
+                      </Col>
+                    ))}
+                  </div>
+                </Form.Group>
+
+                <Form.Group className="mb-4">
+                  <Form.Label className="fw-bold">Travel month</Form.Label>
+                  <Form.Select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
+                    <option value="">Any month</option>
+                    {months.map((month, index) => (
+                      <option key={index} value={month}>{month}</option>
+                    ))}
+                  </Form.Select>
+                </Form.Group>
+
+                <div className="text-center">
+                  <Button 
+                    variant="primary" 
+                    size="lg" 
+                    onClick={handleGetRecommendations}
+                    disabled={selectedInterests.length === 0 || loading}
+                    className="px-4"
+                  >
+                    {loading ? (
+                      <>
+                        <Spinner animation="border" size="sm" className="me-2" />
+                        Searching...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-search me-2"></i>
+                        Search Destinations
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
-            </Col>
-          </Row>
-        )}
+            </div>
+          </Col>
+        </Row>
       </Container>
     </div>
   );

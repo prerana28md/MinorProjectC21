@@ -1,5 +1,24 @@
 import React from 'react';
 import { Card } from 'react-bootstrap';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js';
+import { Bar } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 const PredictionChart = ({ data, title, selectedCategory }) => {
   if (!data || !data.historical_data || !data.future_predictions) {
@@ -14,18 +33,44 @@ const PredictionChart = ({ data, title, selectedCategory }) => {
   }
 
   const { historical_data, future_predictions } = data;
-  
-  // Combine historical and future data
   const allData = [...historical_data, ...future_predictions];
-  const maxVisitors = Math.max(...allData.map(d => d.visitors));
-  const minVisitors = Math.min(...allData.map(d => d.visitors));
-  const range = maxVisitors - minVisitors;
 
-  // Calculate growth rate
+  const labels = allData.map(d => d.year);
+  const values = allData.map(d => Number(d.visitors || 0));
+  const isFutureIndex = (index) => index >= historical_data.length;
+
+  const backgroundColors = values.map((v, idx) => isFutureIndex(idx) ? 'rgba(40,167,69,0.8)' : 'rgba(0,123,255,0.8)');
+
+  const chartData = {
+    labels,
+    datasets: [
+      {
+        label: 'Visitors',
+        data: values,
+        backgroundColor: backgroundColors,
+        borderColor: backgroundColors,
+        borderWidth: 1,
+      }
+    ]
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      title: { display: true, text: title }
+    },
+    scales: {
+      x: { grid: { display: false } },
+      y: { beginAtZero: true }
+    }
+  };
+
   const latestHistorical = historical_data[historical_data.length - 1];
   const firstFuture = future_predictions[0];
   const growthRate = latestHistorical ? 
-    ((firstFuture.visitors - latestHistorical.visitors) / latestHistorical.visitors * 100).toFixed(1) : 0;
+    ((Number(firstFuture.visitors) - Number(latestHistorical.visitors)) / Number(latestHistorical.visitors) * 100).toFixed(1) : 0;
 
   return (
     <Card>
@@ -42,46 +87,8 @@ const PredictionChart = ({ data, title, selectedCategory }) => {
           </div>
         </div>
 
-        {/* Enhanced bar chart for all years 2020-2028 */}
-        <div className="prediction-chart d-flex align-items-end justify-content-between" style={{ height: '160px', gap: '4px', padding: '10px 0' }}>
-          {allData.map((item, index) => {
-            const isFuture = index >= historical_data.length;
-            const height = range > 0 ? ((item.visitors - minVisitors) / range * 100) : 50;
-            
-            return (
-              <div key={item.year} className="d-flex flex-column align-items-center" style={{ flex: 1, minWidth: '40px' }}>
-                <div
-                  className={`bar ${isFuture ? 'future-bar' : 'historical-bar'}`}
-                  style={{
-                    height: `${height}%`,
-                    width: '100%',
-                    maxWidth: '35px',
-                    backgroundColor: isFuture ? '#28a745' : '#007bff',
-                    borderRadius: '3px 3px 0 0',
-                    marginBottom: '8px',
-                    transition: 'all 0.3s ease',
-                    boxShadow: isFuture ? '0 2px 4px rgba(40, 167, 69, 0.3)' : '0 2px 4px rgba(0, 123, 255, 0.3)',
-                    cursor: 'pointer'
-                  }}
-                  title={`${item.year}: ${item.visitors.toLocaleString()} visitors`}
-                  onMouseEnter={(e) => {
-                    e.target.style.transform = 'scale(1.05)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.transform = 'scale(1)';
-                  }}
-                ></div>
-                <div className="text-center">
-                  <div className="fw-bold" style={{ fontSize: '0.7rem', color: isFuture ? '#28a745' : '#007bff' }}>
-                    {item.year}
-                  </div>
-                  <div className="fw-bold" style={{ fontSize: '0.6rem', color: '#666' }}>
-                    {item.visitors.toLocaleString()}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div style={{ height: 260 }}>
+          <Bar data={chartData} options={options} />
         </div>
 
         <div className="mt-3">
@@ -97,13 +104,12 @@ const PredictionChart = ({ data, title, selectedCategory }) => {
           </div>
         </div>
 
-        {/* Key insights */}
         <div className="mt-3">
           <h6 className="small">Key Insights:</h6>
           <ul className="small list-unstyled mb-0">
             <li>• Peak year: {allData.reduce((max, item) => item.visitors > max.visitors ? item : max).year}</li>
-            <li>• Total visitors (2024): {latestHistorical?.visitors.toLocaleString() || 'N/A'}</li>
-            <li>• Predicted (2026): {future_predictions[0]?.visitors.toLocaleString() || 'N/A'}</li>
+            <li>• Total visitors (2024): {latestHistorical?.visitors?.toLocaleString() || 'N/A'}</li>
+            <li>• Predicted (2026): {future_predictions[0]?.visitors?.toLocaleString() || 'N/A'}</li>
           </ul>
         </div>
       </Card.Body>

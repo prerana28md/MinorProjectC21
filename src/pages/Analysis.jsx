@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Alert, Spinner } from 'react-bootstrap';
-import { dataAPI, mockDataAPI } from '../services/api';
+import axios from 'axios';
 import TrendChart from '../components/TrendChart';
 import RiskChart from '../components/RiskChart';
 import WeatherCard from '../components/WeatherCard';
 import PredictionChart from '../components/PredictionChart';
+import CategoryDonutChart from '../components/CategoryDonutChart';
+
+const API_BASE_URL = 'http://127.0.0.1:5000';
 
 const Analysis = () => {
   const [states, setStates] = useState([]);
@@ -15,44 +18,29 @@ const Analysis = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [predictionData, setPredictionData] = useState(null);
-  const [availableCategories, setAvailableCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('');
   const [categoryPredictionData, setCategoryPredictionData] = useState(null);
 
   useEffect(() => {
     fetchStates();
   }, []);
 
-  // Debug: Test API connection
-  useEffect(() => {
-    const testAPI = async () => {
-      try {
-        console.log('Testing API connection...');
-        const response = await dataAPI.getStates();
-        console.log('API test successful:', response.data);
-      } catch (err) {
-        console.error('API test failed:', err);
-      }
-    };
-    testAPI();
-  }, []);
-
   useEffect(() => {
     if (selectedState) {
       console.log('State selected, fetching cities for:', selectedState);
       fetchCities(selectedState);
+    } else {
+      setCities([]);
     }
   }, [selectedState]);
 
   const fetchStates = async () => {
     try {
-      const response = await dataAPI.getStates();
+      const response = await axios.get(`${API_BASE_URL}/states`);
       console.log('States API Response:', response.data);
-      setStates(response.data);
+      setStates(Array.isArray(response.data) ? response.data : []);
     } catch (err) {
-      console.log('Using mock data for states');
-      const mockResponse = await mockDataAPI.getStates();
-      setStates(mockResponse.data);
+      console.error('Error fetching states:', err);
+      setError('Failed to load states');
     }
   };
 
@@ -60,33 +48,33 @@ const Analysis = () => {
     try {
       console.log('Fetching cities for state:', stateName);
       
-      // Try different state name formats
-      let response;
-      try {
-        response = await dataAPI.getStateCities(stateName);
-      } catch (firstErr) {
-        console.log('First attempt failed, trying with different format...');
-        // Try with different case or format
-        const alternativeName = stateName.toLowerCase();
-        response = await dataAPI.getStateCities(alternativeName);
-      }
-      
+      const response = await axios.get(`${API_BASE_URL}/states/${stateName}/cities`);
       console.log('Cities API Response:', response.data);
       
-      // Backend returns array of city objects, extract city names
-      const cityNames = Array.isArray(response.data) 
-        ? response.data.map(city => {
-            console.log('City object:', city);
-            return city.city_name || city.name || city;
-          })
-        : [];
+      let cityNames = [];
+      
+      if (Array.isArray(response.data)) {
+        cityNames = response.data.map(city => {
+          if (typeof city === 'string') {
+            return city;
+          }
+          return city.city_name || city.name || city.cityName || '';
+        }).filter(name => name !== '');
+      } else if (response.data && Array.isArray(response.data.cities)) {
+        cityNames = response.data.cities;
+      }
+      
       console.log('Extracted city names:', cityNames);
       setCities(cityNames);
+      
+      if (cityNames.length === 0) {
+        console.warn('No cities found for state:', stateName);
+      }
     } catch (err) {
       console.error('Error fetching cities:', err);
-      console.log('Using mock data for cities');
-      const mockResponse = await mockDataAPI.getStateCities(stateName);
-      setCities(Array.isArray(mockResponse.data) ? mockResponse.data : []);
+      console.error('Error details:', err.response?.data || err.message);
+      setCities([]);
+      console.log('No cities available for this state');
     }
   };
 
@@ -99,58 +87,51 @@ const Analysis = () => {
     setLoading(true);
     setError(null);
     setAnalysisData(null);
+    setPredictionData(null);
+    setCategoryPredictionData(null);
 
     try {
       const [stateDetails, riskData, trendsData, predictionData] = await Promise.all([
-        dataAPI.getStateDetails(selectedState),
-        dataAPI.getStateRisk(selectedState),
-        dataAPI.getStateTourismTrends(selectedState),
-        dataAPI.getPredictTrends(selectedState)
+        axios.get(`${API_BASE_URL}/states/${selectedState}`),
+        axios.get(`${API_BASE_URL}/states/${selectedState}/risk`),
+        axios.get(`${API_BASE_URL}/states/${selectedState}/tourism_trends`),
+        axios.get(`${API_BASE_URL}/predict_trend/${selectedState}`)
       ]);
 
-      // Convert trends object to array format for charts
+      console.log('Risk Data:', riskData.data);
+      console.log('Prediction Data:', predictionData.data);
+
       const trendsArray = Object.entries(trendsData.data).map(([year, arrivals]) => ({
         year: year,
         arrivals: arrivals
       }));
 
-      // Convert risk data to array format for charts
-      const riskArray = Object.entries(riskData.data)
-        .filter(([key, value]) => key !== 'state' && typeof value === 'number')
-        .map(([type, level]) => ({
-          type: type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-          level: level
-        }));
-
-      // Get available categories for predictions
-      const categories = predictionData.data?.category_predictions ? 
-        Object.keys(predictionData.data.category_predictions) : [];
+      const riskFormatted = {
+        risks: riskData.data.risks || {},
+        health_alerts: riskData.data.health_alerts || '',
+        safety_suggestions: riskData.data.safety_suggestions || '',
+        insurance_available: riskData.data.insurance_available || '',
+        major_disaster_years: riskData.data.major_disaster_years || '',
+        hotspot_districts: riskData.data.hotspot_districts || ''
+      };
 
       setAnalysisData({
         state: stateDetails.data,
-        risk: { risks: riskArray },
+        risk: riskFormatted,
         trends: { trends: trendsArray }
       });
 
       setPredictionData(predictionData.data);
-      setAvailableCategories(categories);
-    } catch (err) {
-      console.log('Using mock data for analysis');
-      try {
-        const [stateDetails, riskData, trendsData] = await Promise.all([
-          mockDataAPI.getStateDetails(selectedState),
-          mockDataAPI.getStateRisk(selectedState),
-          mockDataAPI.getStateTourismTrends(selectedState)
-        ]);
-
-        setAnalysisData({
-          state: stateDetails.data,
-          risk: riskData.data,
-          trends: trendsData.data
-        });
-      } catch (mockErr) {
-        setError('Failed to fetch analysis data');
+      
+      if (predictionData.data && predictionData.data.category_predictions) {
+        const cats = Object.keys(predictionData.data.category_predictions);
+        if (cats && cats.length > 0) {
+          handleCategoryPrediction(cats[0]);
+        }
       }
+    } catch (err) {
+      console.error('Error fetching analysis data:', err);
+      setError(`Failed to fetch analysis data: ${err.response?.data?.error || err.message}`);
     } finally {
       setLoading(false);
     }
@@ -160,7 +141,8 @@ const Analysis = () => {
     if (!selectedState || !category) return;
 
     try {
-      const response = await dataAPI.getPredictTrendsByCategory(selectedState, category);
+      const response = await axios.get(`${API_BASE_URL}/predict_trend/${selectedState}/${category}`);
+      console.log('Category Prediction Data:', response.data);
       setCategoryPredictionData(response.data);
     } catch (err) {
       console.error('Error fetching category prediction:', err);
@@ -173,18 +155,19 @@ const Analysis = () => {
     const { state, risk, trends } = analysisData;
     const insights = [];
 
-    if (trends && trends.trends && trends.trends.length > 0) {
+    if (trends && trends.trends && trends.trends.length > 1) {
       const latestYear = trends.trends[trends.trends.length - 1];
       const previousYear = trends.trends[trends.trends.length - 2];
-      if (latestYear && previousYear) {
+      if (latestYear && previousYear && previousYear.arrivals > 0) {
         const growth = ((latestYear.arrivals - previousYear.arrivals) / previousYear.arrivals * 100).toFixed(1);
-        insights.push(`Tourism growth: ${growth}%`);
+        insights.push(`Tourism growth: ${growth}% (${previousYear.year} to ${latestYear.year})`);
       }
     }
 
-    if (risk && risk.risks) {
-      const avgRisk = risk.risks.reduce((sum, r) => sum + (r.level || r.score || 0), 0) / risk.risks.length;
-      insights.push(`Average risk level: ${avgRisk.toFixed(1)}/10`);
+    if (risk && risk.risks && Object.keys(risk.risks).length > 0) {
+      const riskValues = Object.values(risk.risks).map(v => parseFloat(v) || 0);
+      const avgRisk = riskValues.reduce((sum, val) => sum + val, 0) / riskValues.length;
+      insights.push(`Average risk level: ${avgRisk.toFixed(2)}`);
     }
 
     if (state && state.best_month) {
@@ -200,10 +183,10 @@ const Analysis = () => {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header bg-primary text-white py-4">
         <Container>
           <h1>Destination Analysis</h1>
-          <p>Analyze tourism trends, risks, and weather for any destination</p>
+          <p className="mb-0">Analyze tourism trends, risks, and weather for any destination</p>
         </Container>
       </div>
 
@@ -211,8 +194,8 @@ const Analysis = () => {
         {/* Selection Form */}
         <Row className="mb-5">
           <Col lg={8} className="mx-auto">
-            <div className="card">
-              <div className="card-body">
+            <div className="card shadow">
+              <div className="card-body p-4">
                 <h5 className="card-title mb-4">Select Destination</h5>
                 <Row className="g-3">
                   <Col md={6}>
@@ -223,6 +206,7 @@ const Analysis = () => {
                         onChange={(e) => {
                           setSelectedState(e.target.value);
                           setSelectedCity('');
+                          setAnalysisData(null);
                         }}
                         disabled={loading}
                       >
@@ -242,7 +226,7 @@ const Analysis = () => {
                       <Form.Select
                         value={selectedCity}
                         onChange={(e) => setSelectedCity(e.target.value)}
-                        disabled={!selectedState || loading}
+                        disabled={!selectedState || loading || cities.length === 0}
                       >
                         <option value="">Choose a city...</option>
                         {Array.isArray(cities) && cities.map((city, index) => (
@@ -251,19 +235,10 @@ const Analysis = () => {
                           </option>
                         ))}
                       </Form.Select>
-                      {/* Debug info */}
-                      <small className="text-muted">
-                        Cities loaded: {cities.length} | Selected state: {selectedState}
-                      </small>
-                      {selectedState && (
-                        <Button 
-                          variant="outline-secondary" 
-                          size="sm" 
-                          className="mt-2"
-                          onClick={() => fetchCities(selectedState)}
-                        >
-                          Refresh Cities
-                        </Button>
+                      {selectedState && cities.length === 0 && (
+                        <small className="text-muted d-block mt-1">
+                          No cities available for this state
+                        </small>
                       )}
                     </Form.Group>
                   </Col>
@@ -295,7 +270,9 @@ const Analysis = () => {
         {error && (
           <Row className="mb-4">
             <Col>
-              <Alert variant="danger">{error}</Alert>
+              <Alert variant="danger" dismissible onClose={() => setError(null)}>
+                {error}
+              </Alert>
             </Col>
           </Row>
         )}
@@ -307,7 +284,7 @@ const Analysis = () => {
             <Col lg={6}>
               <TrendChart 
                 data={analysisData.trends} 
-                title="Historical Tourism Trends (Visitors)"
+                title={`Historical Tourism Trends - ${selectedState}`}
               />
             </Col>
 
@@ -315,73 +292,44 @@ const Analysis = () => {
             <Col lg={6}>
               <RiskChart 
                 data={analysisData.risk} 
-                title="Risk Analysis"
+                title={`Risk Analysis - ${selectedState}`}
               />
             </Col>
 
             {/* Future Predictions */}
-            {predictionData && (
+            {predictionData && predictionData.category_predictions && (
               <Col lg={12}>
-                <div className="card">
+                <div className="card shadow">
                   <div className="card-body">
-                    <h6 className="card-title">Future Tourism Predictions</h6>
+                    <h5 className="card-title">Future Tourism Predictions</h5>
                     <p className="text-muted">Based on historical visitor data and machine learning models</p>
                     
-                    {/* Category Selection */}
-                    {availableCategories.length > 0 && (
-                      <div className="mb-3">
-                        <Form.Label>Select Category for Detailed Predictions:</Form.Label>
-                        <div className="d-flex flex-wrap gap-2">
-                          {availableCategories.map((category, index) => (
-                            <Button
-                              key={index}
-                              variant={selectedCategory === category ? "primary" : "outline-primary"}
-                              size="sm"
-                              onClick={() => {
-                                setSelectedCategory(category);
-                                handleCategoryPrediction(category);
-                              }}
-                            >
-                              {category}
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Overall Predictions */}
                     <Row className="g-3">
+                      {/* Category Ratings Donut Chart */}
                       <Col md={6}>
                         <div className="card bg-light">
                           <div className="card-body">
-                            <h6 className="card-title">Overall Predictions</h6>
-                            <div className="row g-2">
-                              {predictionData.category_predictions && 
-                                Object.entries(predictionData.category_predictions).map(([category, data]) => (
-                                  <div key={category} className="col-6">
-                                    <small className="text-muted">{category}</small>
-                                    <div className="fw-bold">
-                                      {data.predicted_visitors_by_year['2026']?.toLocaleString() || 'N/A'}
-                                    </div>
-                                    <small className="text-success">
-                                      Avg Rating: {data.average_tourist_rating}
-                                    </small>
-                                  </div>
-                                ))
-                              }
-                            </div>
+                            <h6 className="card-title">Category-wise Tourism Ratings</h6>
+                            <CategoryDonutChart data={predictionData} />
                           </div>
                         </div>
                       </Col>
                       
+                      {/* Historical and Future Predictions */}
                       <Col md={6}>
-                        {categoryPredictionData && (
-                          <PredictionChart 
-                            data={categoryPredictionData}
-                            title={`${selectedCategory} Predictions`}
-                            selectedCategory={selectedCategory}
-                          />
-                        )}
+                        <div className="card bg-light">
+                          <div className="card-body">
+                            <h6 className="card-title">Historical and Future Tourism Trends</h6>
+                            {categoryPredictionData ? (
+                              <PredictionChart 
+                                data={categoryPredictionData}
+                                title="Visitor Predictions"
+                              />
+                            ) : (
+                              <p className="text-muted">Select a category to view predictions</p>
+                            )}
+                          </div>
+                        </div>
                       </Col>
                     </Row>
                   </div>
@@ -398,13 +346,16 @@ const Analysis = () => {
               />
             </Col>
 
-            {/* Key Insights */}
+            {/* Key Insights - Fixed: removed h-100 class */}
             <Col lg={6}>
-              <div className="card h-100">
+              <div className="card shadow">
                 <div className="card-body">
-                  <h6 className="card-title">Key Insights</h6>
-                  {getKeyInsights() ? (
-                    <ul className="list-unstyled">
+                  <h5 className="card-title">
+                    <i className="fas fa-lightbulb text-warning me-2"></i>
+                    Key Insights
+                  </h5>
+                  {getKeyInsights() && getKeyInsights().length > 0 ? (
+                    <ul className="list-unstyled mb-3">
                       {getKeyInsights().map((insight, index) => (
                         <li key={index} className="mb-2">
                           <i className="fas fa-check-circle text-success me-2"></i>
@@ -418,18 +369,76 @@ const Analysis = () => {
                   
                   {analysisData.state && (
                     <div className="mt-4">
-                      <h6>State Information</h6>
-                      <div className="row g-2">
+                      <h6 className="border-bottom pb-2 mb-3">
+                        <i className="fas fa-info-circle text-primary me-2"></i>
+                        State Information
+                      </h6>
+                      <div className="row g-3">
                         {analysisData.state.capital && (
                           <div className="col-6">
-                            <small className="text-muted">Capital:</small>
-                            <div className="fw-bold">{analysisData.state.capital}</div>
+                            <div className="p-2 rounded" style={{ backgroundColor: '#f8f9fa' }}>
+                              <small className="text-muted d-block">
+                                <i className="fas fa-landmark me-1"></i>
+                                Capital
+                              </small>
+                              <div className="fw-bold">{analysisData.state.capital}</div>
+                            </div>
                           </div>
                         )}
                         {analysisData.state.population && (
                           <div className="col-6">
-                            <small className="text-muted">Population:</small>
-                            <div className="fw-bold">{analysisData.state.population.toLocaleString()}</div>
+                            <div className="p-2 rounded" style={{ backgroundColor: '#f8f9fa' }}>
+                              <small className="text-muted d-block">
+                                <i className="fas fa-users me-1"></i>
+                                Population
+                              </small>
+                              <div className="fw-bold">{analysisData.state.population.toLocaleString()}</div>
+                            </div>
+                          </div>
+                        )}
+                        {analysisData.state.gdp_inr_crore && (
+                          <div className="col-6">
+                            <div className="p-2 rounded" style={{ backgroundColor: '#f8f9fa' }}>
+                              <small className="text-muted d-block">
+                                <i className="fas fa-chart-line me-1"></i>
+                                GDP
+                              </small>
+                              <div className="fw-bold">₹{analysisData.state.gdp_inr_crore.toLocaleString()} Cr</div>
+                            </div>
+                          </div>
+                        )}
+                        {analysisData.state.literacy_rate && (
+                          <div className="col-6">
+                            <div className="p-2 rounded" style={{ backgroundColor: '#f8f9fa' }}>
+                              <small className="text-muted d-block">
+                                <i className="fas fa-graduation-cap me-1"></i>
+                                Literacy Rate
+                              </small>
+                              <div className="fw-bold">{analysisData.state.literacy_rate}%</div>
+                            </div>
+                          </div>
+                        )}
+                        {analysisData.state.safety_index && (
+  <div className="col-6">
+    <div className="p-2 rounded" style={{ backgroundColor: '#f8f9fa' }}>
+      <small className="text-muted d-block">
+        <i className="fas fa-shield-alt me-1"></i>
+        Safety Index
+      </small>
+      <div className="fw-bold">{(analysisData.state.safety_index * 10).toFixed(1)}/10</div>
+    </div>
+  </div>
+)}
+
+                        {analysisData.state.best_time_to_visit && (
+                          <div className="col-12">
+                            <div className="p-2 rounded" style={{ backgroundColor: '#e8f5e9' }}>
+                              <small className="text-muted d-block">
+                                <i className="fas fa-calendar-alt me-1"></i>
+                                Best Time to Visit
+                              </small>
+                              <div className="fw-bold text-success">{analysisData.state.best_time_to_visit}</div>
+                            </div>
                           </div>
                         )}
                       </div>
