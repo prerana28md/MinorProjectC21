@@ -16,15 +16,31 @@ bcrypt = Bcrypt(app)
 # (keeps behavior consistent without adding endpoints)
 app.url_map.strict_slashes = False
 
-# Connect to MongoDB Atlas
-# Replace <username>, <password>, and <cluster-url> with your details
+# Connect to MongoDB Atlas with error handling and timeouts
 from dotenv import load_dotenv
 load_dotenv()
 mongo_uri = os.getenv("MONGO_URI")
 
-client = MongoClient(mongo_uri)
-db = client["tourism_db"]
-users_collection = db["users"]
+try:
+    # Set shorter timeouts and add retryWrites
+    client = MongoClient(
+        mongo_uri,
+        serverSelectionTimeoutMS=5000,  # 5 second timeout
+        connectTimeoutMS=5000,
+        socketTimeoutMS=5000,
+        retryWrites=True
+    )
+    # Test the connection
+    client.admin.command('ping')
+    print("Successfully connected to MongoDB.")
+    db = client["tourism_db"]
+    users_collection = db["users"]
+except Exception as e:
+    print(f"Warning: MongoDB connection failed: {str(e)}")
+    print("The application will continue with limited functionality (user features disabled).")
+    client = None
+    db = None
+    users_collection = None
 
 
 # In-memory user store for demo authentication
@@ -37,6 +53,8 @@ states_complete_df = pd.read_csv(os.path.join(BASE_DIR, "data", "states_complete
 cities_df = pd.read_csv(os.path.join(BASE_DIR, "data", "cities.csv"))
 risk_df = pd.read_csv(os.path.join(BASE_DIR, "data", "risk_data.csv"))
 
+if 'state_name' in cities_df.columns:
+    cities_df['state_name'] = cities_df['state_name'].str.strip()
 # ---------------------------------------------
 # 🔐 USER AUTHENTICATION (Register / Login)
 # ---------------------------------------------
@@ -45,6 +63,9 @@ from datetime import datetime
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    if users_collection is None:
+        return jsonify({"error": "User registration is currently unavailable"}), 503
+
     # Handle GET request to show example usage
     if request.method == 'GET':
         return jsonify({
@@ -69,23 +90,27 @@ def register():
     if not username or not password or not email:
         return jsonify({"error": "Username, email and password are required"}), 400
 
-    # Check if username or email exists
-    if users_collection.find_one({"$or": [{"username": username}, {"email": email}]}):
-        return jsonify({"error": "Username or Email already exists"}), 409
+    try:
+        # Check if username or email exists
+        if users_collection.find_one({"$or": [{"username": username}, {"email": email}]}):
+            return jsonify({"error": "Username or Email already exists"}), 409
 
-    # Hash password (using bcrypt as in your original)
-    hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
+        # Hash password (using bcrypt as in your original)
+        hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
 
-    # Insert user document including interests and createdAt timestamp
-    users_collection.insert_one({
-        "username": username,
-        "email": email,
-        "password": hashed_pw,
-        "interests": interests,
-        "createdAt": datetime.utcnow()
-    })
+        # Insert user document including interests and createdAt timestamp
+        users_collection.insert_one({
+            "username": username,
+            "email": email,
+            "password": hashed_pw,
+            "interests": interests,
+            "createdAt": datetime.utcnow()
+        })
 
-    return jsonify({"message": "User registered successfully."}), 201
+        return jsonify({"message": "User registered successfully."}), 201
+    except Exception as e:
+        print(f"Database operation failed: {str(e)}")
+        return jsonify({"error": "Registration failed due to database error"}), 503
 
 @app.route('/interests', methods=['GET'])
 def get_interests():
@@ -110,15 +135,22 @@ def get_interests():
 
 @app.route('/login', methods=['POST'])
 def login():
+    if users_collection is None:
+        return jsonify({"error": "Login service is currently unavailable"}), 503
+
     data = request.get_json()
     username = data.get("username")
     password = data.get("password")
 
-    user = users_collection.find_one({"username": username})
-    if not user or not bcrypt.check_password_hash(user["password"], password):
-        return jsonify({"error": "Invalid credentials"}), 401
+    try:
+        user = users_collection.find_one({"username": username})
+        if not user or not bcrypt.check_password_hash(user["password"], password):
+            return jsonify({"error": "Invalid credentials"}), 401
 
-    return jsonify({"message": "Login successful", "username": username})
+        return jsonify({"message": "Login successful", "username": username})
+    except Exception as e:
+        print(f"Login failed: {str(e)}")
+        return jsonify({"error": "Login failed due to database error"}), 503
 
 
 @app.errorhandler(404)
@@ -183,6 +215,18 @@ def state_details(state_name):
         if col.startswith('tourism_'):
             del state_data[col]
     return jsonify(state_data)
+
+@app.route('/cities', methods=['GET'])
+def get_all_cities():
+    try:
+        # Extract unique city names from cities_df
+        cities_list = cities_df['city_name'].dropna().unique().tolist()
+        cities_list.sort()
+        return jsonify({"status": "success", "cities": cities_list})
+    except Exception as e:
+        print(f"Error fetching all cities: {str(e)}")
+        return jsonify({"status": "error", "message": "Failed to fetch cities"}), 500
+
 
 # Risk data for state
 # Risk data for state
@@ -328,15 +372,16 @@ def state_cities(state_name):
             print(f"Available states in cities.csv: {available_states}")
             # Return empty array instead of 404 to avoid breaking frontend
             return jsonify([])
+        df.drop_duplicates(subset=['city_name'], inplace=True)
+        df.sort_values('city_name', inplace=True)
         
-        # Get unique cities from the dataframe
-        cities_list = df['city_name'].dropna().unique().tolist()
+        # Convert NaN to None for proper JSON conversion
+        df = df.where(pd.notnull(df), None)
         
-        # Sort alphabetically for better UX
-        cities_list.sort()
+        cities_objects = df.to_dict(orient='records')
         
-        print(f"Found {len(cities_list)} cities for state: {state_name}")
-        return jsonify(cities_list)
+        print(f"Found {len(cities_objects)} cities for state: {state_name}")
+        return jsonify(cities_objects)
         
     except Exception as e:
         print(f"Error in state_cities endpoint: {str(e)}")
@@ -541,97 +586,258 @@ def _ensure_api_key():
 # Mapping local/alternative city names to OpenWeatherMap recognized names
 # City name mapping for OpenWeatherMap API
 city_map = {
-    # Karnataka
-    "Mysuru": "Mysore",
-    "Bengaluru": "Bangalore",
-    "Kodagu": "Madikeri",  # Hill headquarters, covers "Coorg"
-    "Coorg": "Madikeri",
-
-    # Kerala
-    "Thiruvananthapuram": "Trivandrum",
-    "Kochi": "Cochin",
-    "Alappuzha": "Alleppey",
-    "Alleppey": "Alappuzha",
-
-    # Tamil Nadu
-    "Chennai": "Madras",    # "Chennai" is now canonical, "Madras" is legacy
-    "Madurai": "Madurai",
-    "Kanyakumari": "Kanyakumari",
-    "Ooty": "Ootacamund",
-    "Ootacamund": "Ooty",
-
-    # Delhi/NCR
-    "New Delhi": "Delhi",
-
-    # Maharashtra
-    "Mumbai": "Bombay",
-    "Pune": "Poona",
-    "Aurangabad": "Aurangabad",
-
-    # Uttar Pradesh
-    "Prayagraj": "Allahabad",
-    "Varanasi": "Benares",
-    "Agra": "Agra",
-
-    # Rajasthan
-    "Jaipur": "Jaipur",
-    "Udaipur": "Udaipur",
-    "Jodhpur": "Jodhpur",
-    "Jaisalmer": "Jaisalmer",
-
-    # West Bengal
-    "Kolkata": "Calcutta",
-    "Darjeeling": "Darjeeling",
-
-    # Himachal Pradesh
-    "Shimla": "Simla",
-    "Manali": "Manali",
-    "Dharamshala": "Dharamsala",
-
-    # Uttarakhand
-    "Dehradun": "Dehra Dun",
-    "Rishikesh": "Rishikesh",
-    "Nainital": "Nainital",
-    "Mussoorie": "Mussoorie",
-    "Haridwar": "Hardwar",
-
-    # Goa
-    "Panaji": "Panjim",
-    "Panjim": "Panaji",
-
-    # Gujarat
-    "Ahmedabad": "Ahmadabad",
-    "Vadodara": "Vadodara",
-
-    # Other states and notable cities
-    "Hyderabad": "Hyderabad",
-    "Visakhapatnam": "Vishakhapatnam",
-    "Vijayawada": "Bezawada",
-
-    "Amritsar": "Amritsar",
-    "Chandigarh": "Chandigarh",
-    "Bhubaneswar": "Bhubaneshwar",
-    "Puri": "Purī",
-    "Gangtok": "Gangtok",
-    "Guwahati": "Gauhati",
-    "Imphal": "Imphal",
-    "Shillong": "Sohra",  # Also handles Cherrapunji as Sohra
-    "Aizawl": "Aizawl",
-    "Kohima": "Kohima",
-    "Itanagar": "Itanagar",
-    "Agartala": "Agartala",
-    "Patna": "Patna",
-    "Ranchi": "Ranchi",
-    "Jamshedpur": "Tatanagar",
-    "Jagdalpur": "Jagdalpur",
-
-    # Sikkim
-    "Gangtok": "Gangtok",
-
-    # Common variations
-    "Pondicherry": "Puducherry",
-    "Orissa": "Odisha"
+  "Adilabad": "Adilabad",
+  "Agartala": "Agartala",
+  "Agra": "Agra",
+  "Ahmedabad": "Ahmedabad",
+  "Aizawl": "Aizawl",
+  "Ajmer": "Ajmer",
+  "Alibaug": "Alibaug",
+  "Allahabad (Prayagraj)": "Prayagraj",
+  "Alleppey": "Alappuzha",
+  "Almora": "Almora",
+  "Amaravati": "Amaravati",
+  "Amritsar": "Amritsar",
+  "Anandpur Sahib": "Anandpur Sahib",
+  "Ananthagiri Hills": "Ananthagiri Hills",
+  "Andro Village": "Andro",
+  "Araku Valley": "Araku",
+  "Auli": "Auli",
+  "Aurangabad (Ajanta & Ellora Caves)": "Aurangabad",
+  "Ayodhya": "Ayodhya",
+  "Badami": "Badami",
+  "Badrinath": "Badrinath",
+  "Balpakram National Park": "Balpakram",
+  "Barnawapara Wildlife Sanctuary": "Barnawapara",
+  "Bastar": "Bastar",
+  "Bathinda": "Bathinda",
+  "Bekal Fort": "Bekal",
+  "Bengaluru": "Bangalore",
+  "Berhampur": "Berhampur",
+  "Betla National Park": "Betla",
+  "Bhalukpong": "Bhalukpong",
+  "Bhongir": "Bhongir",
+  "Bhopal": "Bhopal",
+  "Bhubaneswar": "Bhubaneswar",
+  "Bijapur": "Bijapur",
+  "Bikaner": "Bikaner",
+  "Bishnupur": "Bishnupur",
+  "Bodh Gaya": "Bodh Gaya",
+  "Bomdila": "Bomdila",
+  "Calangute": "Calangute",
+  "Chabimura": "Chabimura",
+  "Chamba": "Chamba",
+  "Champhai": "Champhai",
+  "Chandigarh": "Chandigarh",
+  "Chennai": "Madras",
+  "Cherrapunji": "Cherrapunji",
+  "Chikmagalur": "Chikmagalur",
+  "Chilika Lake": "Bhubaneswar",
+  "Chitrakote Falls": "Jagdalpur",
+  "Chittorgarh": "Chittorgarh",
+  "Coorg (Kodagu)": "Madikeri",
+  "Cuttack": "Cuttack",
+  "Dalhousie": "Dalhousie",
+  "Dampa Tiger Reserve": "Aizawl",
+  "Dandami Luxury Resort": "Itanagar",
+  "Daringbadi": "Daringbadi",
+  "Darjeeling": "Darjeeling",
+  "Dassam Falls": "Ranchi",
+  "Dawki": "Dawki",
+  "Dehradun": "Dehradun",
+  "Deoghar": "Deoghar",
+  "Dharamshala": "Dharamshala",
+  "Dibrugarh": "Dibrugarh",
+  "Digha": "Digha",
+  "Dimapur": "Dimapur",
+  "Dirang": "Dirang",
+  "Dooars": "Dooars",
+  "Dumboor Lake": "Dumboor",
+  "Dzukou Valley": "Kohima",
+  "Gangtok": "Gangtok",
+  "Gaya": "Gaya",
+  "Giridih": "Giridih",
+  "Gokarna": "Gokarna",
+  "Guwahati": "Gauhati",
+  "Gwalior": "Gwalior",
+  "Haflong": "Haflong",
+  "Hajo": "Hajo",
+  "Hampi": "Hampi",
+  "Haridwar": "Haridwar",
+  "Hazaribagh": "Hazaribagh",
+  "Horsley Hills": "Horsley Hills",
+  "Hundru Falls": "Ranchi",
+  "Hyderabad": "Hyderabad",
+  "Imphal": "Imphal",
+  "Indore": "Indore",
+  "Itanagar": "Itanagar",
+  "Jabalpur": "Jabalpur",
+  "Jagdalpur": "Jagdalpur",
+  "Jaipur": "Jaipur",
+  "Jaisalmer": "Jaisalmer",
+  "Jalandhar": "Jalandhar",
+  "Jalpaiguri": "Jalpaiguri",
+  "Jampui Hills": "Jampui",
+  "Jamshedpur": "Tatanagar",
+  "Jhansi": "Jhansi",
+  "Jim Corbett": "Ramnagar",
+  "Jodhpur": "Jodhpur",
+  "Jog Falls": "Sagara",
+  "Jorhat": "Jorhat",
+  "Jowai": "Jowai",
+  "Kalimpong": "Kalimpong",
+  "Kanchipuram": "Kanchipuram",
+  "Kanger Valley National Park": "Jagdalpur",
+  "Kangla Fort": "Imphal",
+  "Kanha National Park": "Kanha",
+  "Kapurthala": "Kapurthala",
+  "Karimnagar": "Karimnagar",
+  "Kasol": "Kasol",
+  "Kaziranga National Park": "Kaziranga",
+  "Kedarnath": "Kedarnath",
+  "Keibul Lamjao National Park": "Imphal",
+  "Kesaria Stupa": "Motihari",
+  "Khajuraho": "Khajuraho",
+  "Khammam": "Khammam",
+  "Khonoma Village": "Kohima",
+  "Kochi": "Cochin",
+  "Kodaikanal": "Kodaikanal",
+  "Kohima": "Kohima",
+  "Kolhapur": "Kolhapur",
+  "Kolkata": "Calcutta",
+  "Konark": "Konark",
+  "Kovalam": "Kovalam",
+  "Kullu": "Kullu",
+  "Kumarakom": "Kumarakom",
+  "Kurnool": "Kurnool",
+  "Kurukshetra": "Kurukshetra",
+  "Lachen": "Lachen",
+  "Lachung": "Lachung",
+  "Laitlum Canyons": "Shillong",
+  "Lepakshi": "Lepakshi",
+  "Loktak Lake": "Imphal",
+  "Lonavala": "Lonavala",
+  "Longleng": "Longleng",
+  "Lucknow": "Lucknow",
+  "Ludhiana": "Ludhiana",
+  "Lunglei": "Lunglei",
+  "Madurai": "Madurai",
+  "Mahabaleshwar": "Mahabaleshwar",
+  "Mainpat": "Mainpat",
+  "Majuli Island": "Majuli",
+  "Manali": "Manali",
+  "Manas National Park": "Manas",
+  "Mathura": "Mathura",
+  "Mawlynnong": "Mawlynnong",
+  "Mawsynram": "Mawsynram",
+  "McLeod Ganj": "McLeod Ganj",
+  "Mechuka": "Mechuka",
+  "Medak": "Medak",
+  "Melaghar": "Melaghar",
+  "Mokokchung": "Mokokchung",
+  "Mon": "Mon",
+  "Moreh": "Moreh",
+  "Mount Abu": "Mount Abu",
+  "Mumbai": "Bombay",
+  "Munnar": "Munnar",
+  "Murlen National Park": "Aizawl",
+  "Murshidabad": "Murshidabad",
+  "Mussoorie": "Mussoorie",
+  "Mysuru": "Mysore",
+  "Nagarjuna Sagar": "Nagarjuna Sagar",
+  "Nagpur": "Nagpur",
+  "Nainital": "Nainital",
+  "Nalanda": "Nalanda",
+  "Namchi": "Namchi",
+  "Namdapha National Park": "Namdapha",
+  "Nashik": "Nashik",
+  "Nathula Pass": "Gangtok",
+  "Neermahal": "Agartala",
+  "Nellore": "Nellore",
+  "Netarhat": "Netarhat",
+  "Nizamabad": "Nizamabad",
+  "Noida": "Noida",
+  "Nongriat": "Nongriat",
+  "Ooty": "Ooty",
+  "Orchha": "Orchha",
+  "Pachmarhi": "Pachmarhi",
+  "Panaji": "Panaji",
+  "Pasighat": "Pasighat",
+  "Patiala": "Patiala",
+  "Patna": "Patna",
+  "Patratu Valley": "Ranchi",
+  "Pawapuri": "Pawapuri",
+  "Pelling": "Pelling",
+  "Phawngpui Peak": "Aizawl",
+  "Phek": "Phek",
+  "Pune": "Pune",
+  "Puri": "Puri",
+  "Pushkar": "Pushkar",
+  "Raghurajpur": "Raghurajpur",
+  "Raipur": "Raipur",
+  "Rajgir": "Rajgir",
+  "Rameswaram": "Rameswaram",
+  "Ranchi": "Ranchi",
+  "Rann of Kutch": "Bhuj",
+  "Ranthambore": "Ranthambore",
+  "Ravangla": "Ravangla",
+  "Reiek": "Aizawl",
+  "Rishikesh": "Rishikesh",
+  "Roing": "Roing",
+  "Sanchi": "Sanchi",
+  "Sarnath": "Sarnath",
+  "Sasaram": "Sasaram",
+  "Sendra Island": "Igatpuri",
+  "Sepahijala Wildlife Sanctuary": "Agartala",
+  "Serchhip": "Serchhip",
+  "Shantiniketan": "Bolpur",
+  "Shillong": "Sohra",
+  "Shimla": "Simla",
+  "Shirdi": "Shirdi",
+  "Simlipal National Park": "Baripada",
+  "Sirpur": "Sirpur",
+  "Sivasagar": "Sivasagar",
+  "Solang Valley": "Manali",
+  "Spiti Valley": "Kaza",
+  "Srisailam": "Srisailam",
+  "Sundarbans": "Sundarbans",
+  "Tamdil Lake": "Aizawl",
+  "Tarn Taran Sahib": "Tarn Taran",
+  "Tawang": "Tawang",
+  "Tezpur": "Tezpur",
+  "Thekkady": "Thekkady",
+  "Thenzawl": "Thenzawl",
+  "Thoubal": "Thoubal",
+  "Thrissur": "Thrissur",
+  "Tirathgarh Falls": "Jagdalpur",
+  "Tirupati": "Tirupati",
+  "Trishna Wildlife Sanctuary": "Agartala",
+  "Tsomgo Lake": "Gangtok",
+  "Tuophema": "Tuophema",
+  "Tura": "Tura",
+  "Udaipur": "Udaipur",
+  "Udayagiri": "Udayagiri",
+  "Udupi": "Udupi",
+  "Ujjain": "Ujjain",
+  "Ukhrul": "Ukhrul",
+  "Unakoti": "Unakoti",
+  "Vaishali": "Vaishali",
+  "Varanasi": "Varanasi",
+  "Varkala": "Varkala",
+  "Vijayawada": "Bezawada",
+  "Vikramshila": "Vikramshila",
+  "Visakhapatnam": "Vishakhapatnam",
+  "Vrindavan": "Vrindavan",
+  "Wagah Border": "Amritsar",
+  "Warangal": "Warangal",
+  "Wayanad": "Wayanad",
+  "Wokha": "Wokha",
+  "Yumthang Valley": "Gangtok",
+  "Ziro Valley": "Ziro",
+  "Zuluk": "Gangtok",
 }
+
+
 
 
 # Representative city for each state (used for state-level weather)
@@ -810,6 +1016,110 @@ def get_state_weather(state_name):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/compare/states', methods=['POST'])
+def compare_states():
+    data = request.json
+    state1 = data.get('state1')
+    state2 = data.get('state2')
+    if not state1 or not state2:
+        return jsonify({"error": "state1 and state2 are required"}), 400
+
+    def safe_split(s):
+        if not s:
+            return []
+        return [x.strip().strip("'\"") for x in s.strip("[] ").split(',') if x.strip()]
+
+    try:
+        df1 = states_complete_df[states_complete_df['state_name'].str.lower() == state1.lower()]
+        df2 = states_complete_df[states_complete_df['state_name'].str.lower() == state2.lower()]
+
+        if df1.empty or df2.empty:
+            return jsonify({"error": "One or both states not found"}), 404
+
+        years = [2020, 2021, 2022, 2023, 2024, 2025]
+        visitors_2020 = {state1: int(df1.iloc[0].get('visitors_2020', 0)),
+                         state2: int(df2.iloc[0].get('visitors_2020', 0))}
+        visitors_2021 = {state1: int(df1.iloc[0].get('visitors_2021', 0)),
+                         state2: int(df2.iloc[0].get('visitors_2021', 0))}
+        visitors_2022 = {state1: int(df1.iloc[0].get('visitors_2022', 0)),
+                         state2: int(df2.iloc[0].get('visitors_2022', 0))}
+        visitors_2023 = {state1: int(df1.iloc[0].get('visitors_2023', 0)),
+                         state2: int(df2.iloc[0].get('visitors_2023', 0))}
+        visitors_2024 = {state1: int(df1.iloc[0].get('visitors_2024', 0)),
+                         state2: int(df2.iloc[0].get('visitors_2024', 0))}
+        visitors_2025 = {state1: int(df1.iloc[0].get('visitors_2025', 0)),
+                         state2: int(df2.iloc[0].get('visitors_2025', 0))}
+
+        famous_for = {
+            state1: safe_split(df1.iloc[0].get('famous_for')),
+            state2: safe_split(df2.iloc[0].get('famous_for')),
+        }
+
+        best_season = {
+            state1: safe_split(df1.iloc[0].get('best_season')),
+            state2: safe_split(df2.iloc[0].get('best_season')),
+        }
+
+        population = {
+            state1: int(df1.iloc[0].get('population', 0)),
+            state2: int(df2.iloc[0].get('population', 0))
+        }
+
+        literacy_rate = {
+            state1: float(df1.iloc[0].get('literacy_rate', 0)),
+            state2: float(df2.iloc[0].get('literacy_rate', 0))
+        }
+
+        gdp_inr_crore = {
+            state1: float(df1.iloc[0].get('gdp_inr_crore', 0)),
+            state2: float(df2.iloc[0].get('gdp_inr_crore', 0))
+        }
+
+        area_km2 = {
+            state1: float(df1.iloc[0].get('area_km2', 0)),
+            state2: float(df2.iloc[0].get('area_km2', 0))
+        }
+
+        safety_index = {
+            state1: float(df1.iloc[0].get('safety_index', 1)),  # 1.0 safest
+            state2: float(df2.iloc[0].get('safety_index', 1))
+        }
+
+        capitals = {
+            state1: df1.iloc[0].get('capital', ''),
+            state2: df2.iloc[0].get('capital', ''),
+        }
+
+        regions = {
+            state1: df1.iloc[0].get('region', ''),
+            state2: df2.iloc[0].get('region', ''),
+        }
+
+        response = {
+            'visitors_2020': visitors_2020,
+            'visitors_2021': visitors_2021,
+            'visitors_2022': visitors_2022,
+            'visitors_2023': visitors_2023,
+            'visitors_2024': visitors_2024,
+            'visitors_2025': visitors_2025,
+            'famous_for': famous_for,
+            'best_season': best_season,
+            'population': population,
+            'literacy_rate': literacy_rate,
+            'gdp_inr_crore': gdp_inr_crore,
+            'area_km2': area_km2,
+            'safety_index': safety_index,
+            'capital': capitals,
+            'region': regions
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        print(f"Server error: {e}")
+        return jsonify({"error": "Server error", "details": str(e)}), 500
 
 # ML
 from sklearn.linear_model import LinearRegression
