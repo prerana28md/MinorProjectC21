@@ -27,7 +27,7 @@ const Compare = () => {
       const response = await dataAPI.getStates();
       let statesData = response.data;
       if (!Array.isArray(statesData)) {
-        statesData = Object.keys(statesData); // convert object keys to array if object
+        statesData = Object.keys(statesData);
       }
       setStates(statesData);
     } catch {
@@ -76,6 +76,7 @@ const Compare = () => {
           risk_index: riskIndex1,
           visitor_count: data.visitors_2024?.[state1] || 0,
           top_category: parseArray(data.famous_for?.[state1])[0] || 'General',
+          top_city: data.top_city?.[state1] || '',
           best_month: parseArray(data.best_season?.[state1])[0] || 'Year-round',
           population: data.population?.[state1] || 0,
           literacy_rate: data.literacy_rate?.[state1] || 0,
@@ -99,6 +100,7 @@ const Compare = () => {
           risk_index: riskIndex2,
           visitor_count: data.visitors_2024?.[state2] || 0,
           top_category: parseArray(data.famous_for?.[state2])[0] || 'General',
+          top_city: data.top_city?.[state2] || '',
           best_month: parseArray(data.best_season?.[state2])[0] || 'Year-round',
           population: data.population?.[state2] || 0,
           literacy_rate: data.literacy_rate?.[state2] || 0,
@@ -215,10 +217,28 @@ const Compare = () => {
         <>
           <Row className="g-4">
             <Col md={6}>
-              <CompareCard data={comparisonData.data.state1_data} title={comparisonData.data.state1_data.name} />
+              <CompareCard data={comparisonData.data.state1_data} title={comparisonData.data.state1_data.name}>
+                {comparisonData.data.state1_data.top_category && (
+                  <div className="mt-2 d-flex justify-content-between text-muted fst-italic small">
+                    <span>Top Category: {comparisonData.data.state1_data.top_category}</span>
+                    {comparisonData.data.state1_data.top_city && (
+                      <span>Top City: {comparisonData.data.state1_data.top_city}</span>
+                    )}
+                  </div>
+                )}
+              </CompareCard>
             </Col>
             <Col md={6}>
-              <CompareCard data={comparisonData.data.state2_data} title={comparisonData.data.state2_data.name} />
+              <CompareCard data={comparisonData.data.state2_data} title={comparisonData.data.state2_data.name}>
+                {comparisonData.data.state2_data.top_category && (
+                  <div className="mt-2 d-flex justify-content-between text-muted fst-italic small">
+                    <span>Top Category: {comparisonData.data.state2_data.top_category}</span>
+                    {comparisonData.data.state2_data.top_city && (
+                      <span>Top City: {comparisonData.data.state2_data.top_city}</span>
+                    )}
+                  </div>
+                )}
+              </CompareCard>
             </Col>
           </Row>
           <Row>

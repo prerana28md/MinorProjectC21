@@ -635,7 +635,7 @@ city_map = {
   "Chilika Lake": "Bhubaneswar",
   "Chitrakote Falls": "Jagdalpur",
   "Chittorgarh": "Chittorgarh",
-  "Coorg (Kodagu)": "Madikeri",
+  "Kodagu": "Madikeri",
   "Cuttack": "Cuttack",
   "Dalhousie": "Dalhousie",
   "Dampa Tiger Reserve": "Aizawl",
@@ -1018,7 +1018,7 @@ def get_state_weather(state_name):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/compare/states', methods=['POST'])
+@app.route('/compare/states', methods=['POST','GET'])
 def compare_states():
     data = request.json
     state1 = data.get('state1')
@@ -1032,90 +1032,89 @@ def compare_states():
         return [x.strip().strip("'\"") for x in s.strip("[] ").split(',') if x.strip()]
 
     try:
+        # Filter states
         df1 = states_complete_df[states_complete_df['state_name'].str.lower() == state1.lower()]
         df2 = states_complete_df[states_complete_df['state_name'].str.lower() == state2.lower()]
 
         if df1.empty or df2.empty:
             return jsonify({"error": "One or both states not found"}), 404
 
-        years = [2020, 2021, 2022, 2023, 2024, 2025]
-        visitors_2020 = {state1: int(df1.iloc[0].get('visitors_2020', 0)),
-                         state2: int(df2.iloc[0].get('visitors_2020', 0))}
-        visitors_2021 = {state1: int(df1.iloc[0].get('visitors_2021', 0)),
-                         state2: int(df2.iloc[0].get('visitors_2021', 0))}
-        visitors_2022 = {state1: int(df1.iloc[0].get('visitors_2022', 0)),
-                         state2: int(df2.iloc[0].get('visitors_2022', 0))}
-        visitors_2023 = {state1: int(df1.iloc[0].get('visitors_2023', 0)),
-                         state2: int(df2.iloc[0].get('visitors_2023', 0))}
-        visitors_2024 = {state1: int(df1.iloc[0].get('visitors_2024', 0)),
-                         state2: int(df2.iloc[0].get('visitors_2024', 0))}
-        visitors_2025 = {state1: int(df1.iloc[0].get('visitors_2025', 0)),
-                         state2: int(df2.iloc[0].get('visitors_2025', 0))}
+        # Identify top city based on highest tourist_rating from cities_df
+        def get_top_city(state):
+            cities = cities_df[cities_df['state_name'].str.lower() == state.lower()]
+            if cities.empty:
+                return ''
+            # Fill NaNs to 0 for rating and select city with max rating
+            cities['tourist_rating'] = cities['tourist_rating'].fillna(0)
+            top_city_row = cities.loc[cities['tourist_rating'].idxmax()]
+            return top_city_row['city_name']
 
-        famous_for = {
-            state1: safe_split(df1.iloc[0].get('famous_for')),
-            state2: safe_split(df2.iloc[0].get('famous_for')),
+        top_city1 = get_top_city(state1)
+        top_city2 = get_top_city(state2)
+
+        # Extract visitors counts for each year
+        visitors_yrs = [2020, 2021, 2022, 2023, 2024, 2025]
+        visitors_data = {}
+        for year in visitors_yrs:
+            visitors_data[year] = {
+                state1: int(df1.iloc[0].get(f'visitors_{year}', 0)),
+                state2: int(df2.iloc[0].get(f'visitors_{year}', 0))
+            }
+
+        comp_data = {
+            'visitors_2020': visitors_data[2020],
+            'visitors_2021': visitors_data[2021],
+            'visitors_2022': visitors_data[2022],
+            'visitors_2023': visitors_data[2023],
+            'visitors_2024': visitors_data[2024],
+            'visitors_2025': visitors_data[2025],
+            'famous_for': {
+                state1: safe_split(df1.iloc[0].get('famous_for')),
+                state2: safe_split(df2.iloc[0].get('famous_for')),
+            },
+            'top_category': {
+                state1: safe_split(df1.iloc[0].get('famous_for'))[0] if df1.iloc[0].get('famous_for') else 'General',
+                state2: safe_split(df2.iloc[0].get('famous_for'))[0] if df2.iloc[0].get('famous_for') else 'General',
+            },
+            'top_city': {
+                state1: top_city1,
+                state2: top_city2,
+            },
+            'best_season': {
+                state1: safe_split(df1.iloc[0].get('best_season'))[0] if df1.iloc[0].get('best_season') else 'Year-round',
+                state2: safe_split(df2.iloc[0].get('best_season'))[0] if df2.iloc[0].get('best_season') else 'Year-round',
+            },
+            'population': {
+                state1: int(df1.iloc[0].get('population', 0)),
+                state2: int(df2.iloc[0].get('population', 0)),
+            },
+            'literacy_rate': {
+                state1: float(df1.iloc[0].get('literacy_rate', 0)),
+                state2: float(df2.iloc[0].get('literacy_rate', 0)),
+            },
+            'gdp_inr_crore': {
+                state1: float(df1.iloc[0].get('gdp_inr_crore', 0)),
+                state2: float(df2.iloc[0].get('gdp_inr_crore', 0)),
+            },
+            'area_km2': {
+                state1: float(df1.iloc[0].get('area_km2', 0)),
+                state2: float(df2.iloc[0].get('area_km2', 0)),
+            },
+            'safety_index': {
+                state1: float(df1.iloc[0].get('safety_index', 1)),
+                state2: float(df2.iloc[0].get('safety_index', 1)),
+            },
+            'capital': {
+                state1: df1.iloc[0].get('capital', ''),
+                state2: df2.iloc[0].get('capital', ''),
+            },
+            'region': {
+                state1: df1.iloc[0].get('region', ''),
+                state2: df2.iloc[0].get('region', ''),
+            }
         }
 
-        best_season = {
-            state1: safe_split(df1.iloc[0].get('best_season')),
-            state2: safe_split(df2.iloc[0].get('best_season')),
-        }
-
-        population = {
-            state1: int(df1.iloc[0].get('population', 0)),
-            state2: int(df2.iloc[0].get('population', 0))
-        }
-
-        literacy_rate = {
-            state1: float(df1.iloc[0].get('literacy_rate', 0)),
-            state2: float(df2.iloc[0].get('literacy_rate', 0))
-        }
-
-        gdp_inr_crore = {
-            state1: float(df1.iloc[0].get('gdp_inr_crore', 0)),
-            state2: float(df2.iloc[0].get('gdp_inr_crore', 0))
-        }
-
-        area_km2 = {
-            state1: float(df1.iloc[0].get('area_km2', 0)),
-            state2: float(df2.iloc[0].get('area_km2', 0))
-        }
-
-        safety_index = {
-            state1: float(df1.iloc[0].get('safety_index', 1)),  # 1.0 safest
-            state2: float(df2.iloc[0].get('safety_index', 1))
-        }
-
-        capitals = {
-            state1: df1.iloc[0].get('capital', ''),
-            state2: df2.iloc[0].get('capital', ''),
-        }
-
-        regions = {
-            state1: df1.iloc[0].get('region', ''),
-            state2: df2.iloc[0].get('region', ''),
-        }
-
-        response = {
-            'visitors_2020': visitors_2020,
-            'visitors_2021': visitors_2021,
-            'visitors_2022': visitors_2022,
-            'visitors_2023': visitors_2023,
-            'visitors_2024': visitors_2024,
-            'visitors_2025': visitors_2025,
-            'famous_for': famous_for,
-            'best_season': best_season,
-            'population': population,
-            'literacy_rate': literacy_rate,
-            'gdp_inr_crore': gdp_inr_crore,
-            'area_km2': area_km2,
-            'safety_index': safety_index,
-            'capital': capitals,
-            'region': regions
-        }
-
-        return jsonify(response)
+        return jsonify(comp_data)
 
     except Exception as e:
         print(f"Server error: {e}")
