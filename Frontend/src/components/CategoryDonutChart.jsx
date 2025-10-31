@@ -7,7 +7,8 @@ import {
   BarElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  ArcElement
 } from 'chart.js';
 
 ChartJS.register(
@@ -16,8 +17,29 @@ ChartJS.register(
   BarElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  ArcElement
 );
+
+// Define standard modern colors for text/grids
+const LIGHT_GRID = 'rgba(0, 0, 0, 0.08)';
+const MODERN_TEXT_COLOR = '#2c3e50';
+const MODERN_SECONDARY_TEXT = '#6c757d';
+
+// NEW ATTRACTIVE COLOR PALETTE
+const MODERN_COLORS = [
+    '#00BFFF', // Sky Blue
+    '#28A745', // Emerald Green
+    '#FF7F50', // Vivid Orange (Coral)
+    '#8A2BE2', // Medium Purple
+    '#FFD700', // Gold
+    '#FF1493', // Deep Pink
+    '#00CED1', // Dark Turquoise/Teal
+    '#FF6347', // Tomato/Coral
+    '#4682B4', // Steel Blue
+    '#CD5C5C', // Indian Red
+];
+
 
 const CategoryDonutChart = ({ data }) => {
   if (!data || !data.category_predictions) {
@@ -32,33 +54,28 @@ const CategoryDonutChart = ({ data }) => {
     .map((cat, idx) => ({ category: cat, rating: ratings[idx] }))
     .sort((a, b) => b.rating - a.rating);
 
+  // Map colors to sorted data
+  const backgroundColors = sortedData.map((item, index) => {
+      // Use a slightly transparent version of the modern color
+      return `${MODERN_COLORS[index % MODERN_COLORS.length]}dd`; // 'dd' for ~87% opacity
+  });
+  
+  // Use the corresponding solid color for the border
+  const borderColors = sortedData.map((item, index) => {
+      return MODERN_COLORS[index % MODERN_COLORS.length];
+  });
+
   const chartData = {
     labels: sortedData.map(item => item.category),
     datasets: [{
       label: 'Tourist Rating',
       data: sortedData.map(item => item.rating),
-      backgroundColor: [
-        'rgba(63, 81, 181, 0.8)',   // Indigo
-        'rgba(3, 169, 244, 0.8)',   // Light Blue
-        'rgba(0, 150, 136, 0.8)',   // Teal
-        'rgba(76, 175, 80, 0.8)',   // Green
-        'rgba(255, 193, 7, 0.8)',   // Amber
-        'rgba(255, 87, 34, 0.8)',   // Deep Orange
-        'rgba(156, 39, 176, 0.8)',  // Purple
-        'rgba(233, 30, 99, 0.8)',   // Pink
-      ],
-      borderColor: [
-        'rgba(63, 81, 181, 1)',
-        'rgba(3, 169, 244, 1)',
-        'rgba(0, 150, 136, 1)',
-        'rgba(76, 175, 80, 1)',
-        'rgba(255, 193, 7, 1)',
-        'rgba(255, 87, 34, 1)',
-        'rgba(156, 39, 176, 1)',
-        'rgba(233, 30, 99, 1)',
-      ],
-      borderWidth: 1,
-      borderRadius: 4,
+      backgroundColor: backgroundColors, // Using new color array
+      borderColor: borderColors,       // Using new color array for borders
+      borderWidth: 1.5,
+      borderRadius: 6,
+      borderSkipped: false,
+      hoverBackgroundColor: borderColors.map(color => color + 'ff'), // Solid color on hover
     }]
   };
 
@@ -68,25 +85,36 @@ const CategoryDonutChart = ({ data }) => {
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        display: false // Hide legend for cleaner look
+        display: false 
       },
       title: {
         display: true,
         text: 'Category-wise Tourist Ratings',
         font: {
-          size: 14,
-          weight: '600'
-        }
+          size: 16,
+          weight: '700'
+        },
+        color: MODERN_TEXT_COLOR,
+        padding: 15,
       },
       tooltip: {
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        padding: 10,
+        backgroundColor: 'rgba(44, 62, 80, 0.9)',
+        padding: 12,
         titleColor: '#fff',
-        bodyColor: '#fff',
+        bodyColor: '#ecf0f1',
+        cornerRadius: 8,
+        displayColors: true, // Display color square to match bar color
+        bodyFont: {
+            size: 13,
+            weight: '500'
+        },
         callbacks: {
           label: (context) => {
-            const value = context.parsed.x.toFixed(1);
+            const value = context.parsed.x.toFixed(2);
             return `Rating: ${value} / 5.0`;
+          },
+          title: (context) => {
+              return context[0].label;
           }
         }
       }
@@ -94,17 +122,34 @@ const CategoryDonutChart = ({ data }) => {
     scales: {
       x: {
         beginAtZero: false,
-        min: Math.min(...ratings) - 0.3, // Start slightly below minimum
-        max: 5.0, // Maximum rating
+        min: 0,
+        max: 5.0,
+        position: 'top',
         ticks: {
-          stepSize: 0.5,
+          stepSize: 1.0,
+          color: MODERN_SECONDARY_TEXT,
+          font: {
+              size: 12,
+              weight: '600'
+          },
           callback: function(value) {
-            return value.toFixed(1);
+            return value.toFixed(0);
           }
         },
         grid: {
           display: true,
-          color: 'rgba(0, 0, 0, 0.05)'
+          color: LIGHT_GRID,
+          borderDash: [5, 5],
+          drawBorder: false
+        },
+        title: {
+            display: true,
+            text: 'Tourist Rating (Score / 5.0)',
+            color: '#7f8c8d',
+            font: {
+                size: 13,
+                weight: '600'
+            }
         }
       },
       y: {
@@ -112,16 +157,38 @@ const CategoryDonutChart = ({ data }) => {
           display: false
         },
         ticks: {
+          color: MODERN_TEXT_COLOR,
           font: {
-            size: 11
-          }
-        }
+            size: 13,
+            weight: '600'
+          },
+          padding: 10
+        },
+        barThickness: 18,
       }
+    },
+    animation: {
+        duration: 800,
+        easing: 'easeInOutQuart',
+        delay: (context) => {
+            let delay = 0;
+            if (context.type === 'data' && context.mode === 'default') {
+                delay = context.dataIndex * 100; 
+            }
+            return delay;
+        },
     }
   };
 
   return (
-    <div style={{ height: '300px', position: 'relative' }}>
+    <div 
+        className="shadow-sm rounded-lg"
+        style={{ 
+            height: '350px',
+            position: 'relative', 
+            padding: '10px'
+        }}
+    >
       <Bar data={chartData} options={options} />
     </div>
   );
