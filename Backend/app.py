@@ -835,6 +835,7 @@ city_map = {
   "Yumthang Valley": "Gangtok",
   "Ziro Valley": "Ziro",
   "Zuluk": "Gangtok",
+  "Athirappilly": "Chalakudy",
 }
 
 
@@ -870,7 +871,14 @@ state_city_map = {
     "Uttar Pradesh": "Lucknow",
     "Uttarakhand": "Dehradun",
     "West Bengal": "Kolkata",
-    "Delhi": "New Delhi"
+    "Delhi": "New Delhi",
+    "Jammu Kashmir":"Srinagar",
+    "Andaman and Nicobar Islands": "Port Blair, IN",
+    "Chandigarh": "Chandigarh, IN",
+    "Dadra and Nagar Haveli and Daman and Diu": "Daman, IN",
+    "Ladakh": "Leh, IN",
+    "Lakshadweep": "Kavaratti, IN",
+    "Puducherry": "Puducherry, IN"
 }
 
 # ---------------------------------------------

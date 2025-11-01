@@ -27,3 +27,11 @@ Tripura,0.57,0.33,0.22,Zone V,0.15,0.11,Monsoon diseases,Review forest road warn
 Uttar Pradesh,0.64,0.53,0.09,Zone IV,0.54,0.26,"Encephalitis, dengue",Heed river alerts in East UP,0.0,0.62,0.03,No,2021,"Gorakhpur, Allahabad",0.0
 Uttarakhand,0.82,0.81,0.93,Zone V,0.11,0.2,"Leptospirosis, flu",High rainfall may cause roadblocks,0.0,0.2,0.19,No,"2013,2021","Chamoli, Uttarkashi",0.0
 West Bengal,0.78,0.76,0.4,Zone IV,0.36,0.23,"Cyclone, dengue",Follow cyclone and monsoon safety tips,0.89,0.53,0.04,Yes,"2020,2021,2023","South 24 Parganas, Darjeeling",0.23
+Jammu Kashmir,0.35,0.58,0.62,Zone IV,0.28,0.19,"Cold-related illnesses (winter)",Carry warm clothing and stay updated on weather alerts,0.05,0.22,0.18,Yes,"2005, 2014","Srinagar, Baramulla, Anantnag",0.00
+Andaman and Nicobar Islands,0.48,0.46,0.32,Zone V,0.18,0.12,"Dengue and mosquito-borne diseases (monsoon)",Stay updated on cyclone alerts and avoid low-lying coastal areas,0.68,0.15,0.22,Yes,"2004, 2019","Port Blair, Nicobar",0.44
+Chandigarh,0.27,0.35,0.12,Zone IV,0.22,0.26,"Air pollution (winter)",Follow traffic rules and monitor air quality index,0.00,0.18,0.05,Yes,"2013, 2021","Chandigarh (UT)",0.00
+Dadra and Nagar Haveli and Daman and Diu,0.33,0.42,0.25,Zone III,0.20,0.23,"Heat exhaustion (summer)",Take precautions during heat waves and monsoon floods,0.46,0.24,0.10,Yes,"2019, 2020","Daman, Silvassa",0.29
+Delhi,0.39,0.52,0.10,Zone IV,0.44,0.37,"Air pollution and heat waves",Stay hydrated and avoid outdoor exposure during peak pollution hours,0.12,0.26,0.07,Yes,"2020, 2023","Central Delhi, East Delhi",0.00
+Ladakh,0.41,0.28,0.61,Zone IV,0.16,0.20,"High-altitude sickness (year-round)",Acclimatize before travel and carry medical oxygen,0.03,0.19,0.09,Yes,"2010, 2021","Leh, Kargil",0.00
+Lakshadweep,0.46,0.40,0.08,Zone III,0.12,0.11,"Water-borne diseases (monsoon)",Follow cyclone warnings and avoid sea travel during storms,0.72,0.20,0.14,Yes,"2013, 2017","Kavaratti, Minicoy",0.51
+Puducherry,0.37,0.49,0.14,Zone II,0.26,0.28,"Dengue and coastal flooding (monsoon)",Stay indoors during cyclones and avoid sea-facing roads,0.58,0.22,0.15,Yes,"2015, 2021","Puducherry, Karaikal",0.36

@@ -15,7 +15,11 @@ const Register = () => {
   const [interests, setInterests] = useState([]);
   const [preferredMonth, setPreferredMonth] = useState('');
   const [loading, setLoading] = useState(false);
+  // State for Error Message (Red Alert)
   const [error, setError] = useState(null);
+  // New state for Success Message (Green Alert)
+  const [successMessage, setSuccessMessage] = useState(null);
+  
   const navigate = useNavigate();
   const [interestOptions, setInterestOptions] = useState([]);
 
@@ -75,6 +79,7 @@ const Register = () => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setSuccessMessage(null); // Clear previous messages
 
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
@@ -110,7 +115,12 @@ const Register = () => {
           preferred_month: preferredMonth
         }));
         
-        navigate('/');
+        setSuccessMessage('Registration successful! Redirecting you to the home page...');
+        // Set a timeout to redirect after showing the success message
+        setTimeout(() => {
+          navigate('/');
+        }, 1500); // Redirect after 1.5 seconds
+
       } else {
         setError(response.data.message || 'Registration failed');
       }
@@ -134,11 +144,7 @@ const Register = () => {
                   <p className="text-muted">Join us to get personalized recommendations</p>
                 </div>
 
-                {error && (
-                  <Alert variant="danger" className="mb-4">
-                    {error}
-                  </Alert>
-                )}
+                {/* NOTE: Error Alert is intentionally removed from here to be placed at the bottom */}
 
                 <Form onSubmit={handleSubmit}>
                   <Row>
@@ -152,7 +158,7 @@ const Register = () => {
                           onChange={handleChange}
                           placeholder="Choose a username"
                           required
-                          disabled={loading}
+                          disabled={loading || successMessage} // Disable fields on load/success
                         />
                       </Form.Group>
                     </Col>
@@ -166,7 +172,7 @@ const Register = () => {
                           onChange={handleChange}
                           placeholder="Enter your email"
                           required
-                          disabled={loading}
+                          disabled={loading || successMessage}
                         />
                       </Form.Group>
                     </Col>
@@ -183,7 +189,7 @@ const Register = () => {
                           onChange={handleChange}
                           placeholder="Create a password"
                           required
-                          disabled={loading}
+                          disabled={loading || successMessage}
                         />
                       </Form.Group>
                     </Col>
@@ -197,7 +203,7 @@ const Register = () => {
                           onChange={handleChange}
                           placeholder="Confirm your password"
                           required
-                          disabled={loading}
+                          disabled={loading || successMessage}
                         />
                       </Form.Group>
                     </Col>
@@ -221,7 +227,7 @@ const Register = () => {
                               transition: 'all 0.2s',
                               userSelect: 'none'
                             }}
-                            onClick={() => !loading && handleInterestToggle(interest)}
+                            onClick={() => !loading && !successMessage && handleInterestToggle(interest)} // Disable interaction on success/loading
                           >
                             {interests.includes(interest) && '✓ '}
                             {interest}
@@ -244,7 +250,7 @@ const Register = () => {
                     <Form.Select
                       value={preferredMonth}
                       onChange={(e) => setPreferredMonth(e.target.value)}
-                      disabled={loading}
+                      disabled={loading || successMessage}
                     >
                       <option value="">Any month</option>
                       {months.map((month, index) => (
@@ -264,7 +270,7 @@ const Register = () => {
                     variant="primary"
                     size="lg"
                     className="w-100 mb-3"
-                    disabled={loading}
+                    disabled={loading || successMessage}
                   >
                     {loading ? (
                       <>
@@ -276,8 +282,16 @@ const Register = () => {
                     )}
                   </Button>
                 </Form>
-
-                <div className="text-center">
+                
+                {/* *** MODIFICATION: MESSAGE PLACEMENT *** The success/error messages are now placed here, below the form fields and submit button.
+                */}
+                {(error || successMessage) && (
+                  <Alert variant={successMessage ? 'success' : 'danger'} className="mt-4 text-center">
+                    {successMessage || error}
+                  </Alert>
+                )}
+                
+                <div className="text-center mt-4">
                   <p className="mb-0">
                     Already have an account?{' '}
                     <Link to="/login" className="text-primary fw-bold">
