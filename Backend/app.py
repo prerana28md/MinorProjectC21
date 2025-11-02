@@ -524,6 +524,34 @@ def compare_cities():
 
     return jsonify(comparison)
 
+@app.route('/user/<username>/bucket', methods=['GET', 'POST', 'DELETE'])
+def user_bucket(username):
+    user = users_collection.find_one({"username": username})
+    if user is None:
+        return jsonify({"error": "User not found"}), 404
+    if "bucket" not in user:
+        users_collection.update_one({"username": username}, {"$set": {"bucket": []}})
+        user["bucket"] = []
+    if request.method == "GET":
+        return jsonify({"bucket": user["bucket"]})
+    elif request.method == "POST":
+        rec = request.get_json()
+        bucket = user["bucket"]
+        if rec in bucket:
+            return jsonify({"message": "Already in bucket list"}), 200
+        users_collection.update_one({"username": username}, {"$push": {"bucket": rec}})
+        return jsonify({"message": "Added to bucket list"}), 201
+    elif request.method == "DELETE":
+        data = request.get_json()
+        idx = data.get("idx")
+        bucket = user.get("bucket", [])
+        if idx is not None and isinstance(idx, int) and 0 <= idx < len(bucket):
+            bucket.pop(idx)
+            users_collection.update_one({"username": username}, {"$set": {"bucket": bucket}})
+            return jsonify({"message": "Removed from bucket list"}), 200
+        else:
+            return jsonify({"error": "Invalid index"}), 400
+    return jsonify({"error": "Unsupported method"}), 405
 
 # List all users (safe view)
 @app.route('/users', methods=['GET'])

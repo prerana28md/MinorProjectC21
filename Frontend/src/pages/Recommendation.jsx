@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Container, Row, Col, Form, Button, Alert, Spinner, Table, Badge } from 'react-bootstrap';
+import { Container, Row, Col, Form, Button, Alert, Spinner, Table, Badge, Collapse } from 'react-bootstrap';
 import axios from 'axios';
 import WeatherCard from '../components/WeatherCard';
+import '@fortawesome/fontawesome-free/css/all.min.css';
 
 const API_BASE_URL = 'http://127.0.0.1:5000';
 
@@ -14,6 +15,10 @@ const Recommendation = () => {
   const [error, setError] = useState(null);
   const [weatherData, setWeatherData] = useState({});
   const [userPreferences, setUserPreferences] = useState(null);
+  const [openDescription, setOpenDescription] = useState(null);
+  // NEW STATE: To track which cities have been added to the bucket list
+  const [addedDestinations, setAddedDestinations] = useState({}); 
+  
   const autoLoadDoneRef = useRef(false);
   const weatherSectionRef = useRef(null);
 
@@ -58,7 +63,7 @@ const Recommendation = () => {
         }
       }
     }
-  }, [userPreferences, interests, selectedInterests.length]); // added selectedInterests.length here
+  }, [userPreferences, interests, selectedInterests.length]);
 
   async function fetchInterests() {
     try {
@@ -83,6 +88,7 @@ const Recommendation = () => {
     if (!interests || interests.length === 0) return;
     setLoading(true);
     setError(null);
+    setAddedDestinations({}); // Reset added status on new search
     try {
       const requestData = { interests, month, max_risk: 10.0, min_rating: 0 };
       const response = await axios.post(`${API_BASE_URL}/recommend`, requestData);
@@ -107,6 +113,8 @@ const Recommendation = () => {
     setLoading(true);
     setError(null);
     setRecommendations([]);
+    setOpenDescription(null);
+    setAddedDestinations({}); // Reset added status on new search
     try {
       const requestData = { interests: selectedInterests, month: selectedMonth, max_risk: 10.0, min_rating: 0 };
       const response = await axios.post(`${API_BASE_URL}/recommend`, requestData);
@@ -133,7 +141,6 @@ const Recommendation = () => {
 
   const handleViewWeather = async cityName => {
     if (weatherData[cityName]) {
-      // Scroll to weather section
       if (weatherSectionRef.current) {
         weatherSectionRef.current.scrollIntoView({ behavior: 'smooth' });
       }
@@ -142,13 +149,43 @@ const Recommendation = () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/weather/city/${cityName}`);
       setWeatherData(prev => ({ ...prev, [cityName]: response.data }));
-      // Scroll to weather section
       if (weatherSectionRef.current) {
         weatherSectionRef.current.scrollIntoView({ behavior: 'smooth' });
       }
     } catch {
       // Optionally handle error
     }
+  };
+
+  const handleAddToBucketList = async (rec) => {
+    const username = localStorage.getItem('username');
+    const cityName = rec.city_name || rec.city;
+    
+    if (!username) {
+      alert('Login required to use your bucket list!');
+      return;
+    }
+
+    if (!cityName) return; // Guard against missing city name
+
+    try {
+      // Optimistically set the button state to "Adding..." or similar before calling API
+      // (Optional: skipped here for simplicity)
+
+      await axios.post(`${API_BASE_URL}/user/${username}/bucket`, rec);
+      
+      // On success, update state to visually mark as added
+      setAddedDestinations(prev => ({ ...prev, [cityName]: true })); 
+
+    } catch (e) {
+      // If adding fails, log error and notify user (can use a non-disruptive toast/notification here)
+      console.error('Failed to add to bucket list:', e);
+      alert('Failed to add to bucket list.'); 
+    }
+  };
+
+  const toggleDescription = (index) => {
+    setOpenDescription(openDescription === index ? null : index);
   };
 
   const getRatingStars = rating => {
@@ -167,13 +204,13 @@ const Recommendation = () => {
   return (
     <div>
       <div className="page-header bg-primary text-white py-4">
-        <Container>
+        <Container fluid> 
           <h1>Get Recommendations</h1>
           <p className="mb-0">Discover destinations based on your interests and preferences</p>
         </Container>
       </div>
 
-      <Container className="py-5">
+      <Container fluid className="py-5"> 
         {error && (
           <Row className="mb-4">
             <Col>
@@ -184,8 +221,9 @@ const Recommendation = () => {
           </Row>
         )}
 
+        {/* Customization Section */}
         <Row className="mb-5">
-          <Col lg={10} className="mx-auto">
+          <Col lg={12}> 
             <div className="card shadow">
               <div className="card-body p-4">
                 <h5 className="card-title mb-4">
@@ -249,8 +287,8 @@ const Recommendation = () => {
             </div>
           </Col>
         </Row>
-
-        {/* Weather Cards */}
+        
+        {/* Weather Section */}
         <div ref={weatherSectionRef}>
           {Object.keys(weatherData).length > 0 && (
             <>
@@ -260,7 +298,7 @@ const Recommendation = () => {
               <Row className="g-4 mb-5">
                 {Object.entries(weatherData).map(([cityName, weather]) => (
                   <Col md={6} lg={4} key={cityName}>
-                    <WeatherCard cityName={cityName} title={`Weather in ${cityName}`} />
+                    <WeatherCard cityName={cityName} title={`Weather in ${cityName}`} weatherData={weather} />
                   </Col>
                 ))}
               </Row>
@@ -268,10 +306,10 @@ const Recommendation = () => {
           )}
         </div>
 
-        {/* Recommendations Table */}
+        {/* Recommended Destinations Table */}
         {recommendations.length > 0 && (
           <Row className="mb-5">
-            <Col>
+            <Col lg={12}> 
               <div className="card shadow">
                 <div className="card-body">
                   <h5 className="card-title mb-3">
@@ -293,7 +331,7 @@ const Recommendation = () => {
                           <th>Rating</th>
                           <th>Risk Level</th>
                           <th>Best Time</th>
-                          <th>Actions</th>
+                          <th style={{ minWidth: '280px' }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -301,38 +339,78 @@ const Recommendation = () => {
                           const riskIndex = rec.risk_index || rec.risk || 0;
                           const riskBadge = getRiskBadge(riskIndex);
                           const scaledRisk = (riskIndex * 10).toFixed(1);
+                          const cityName = rec.city_name || rec.city;
+                          const description = rec.description || 'No Description Available';
+                          // Check if this destination has been added
+                          const isAdded = addedDestinations[cityName]; 
+
                           return (
-                            <tr key={idx}>
-                              <td className="fw-bold">{idx + 1}</td>
-                              <td><strong>{rec.state_name || rec.state || 'N/A'}</strong></td>
-                              <td><strong>{rec.city_name || rec.city || 'N/A'}</strong></td>
-                              <td><Badge bg="info">{rec.category || 'N/A'}</Badge></td>
-                              <td>
-                                <div className="d-flex align-items-center">
-                                  <span className="me-2">{getRatingStars(rec.tourist_rating || rec.rating || 0)}</span>
-                                  <span className="fw-bold">{(rec.tourist_rating || rec.rating || 0).toFixed(1)}</span>
-                                </div>
-                              </td>
-                              <td>
-                                <Badge bg={riskBadge.variant}>{scaledRisk}/10</Badge>
-                                <div className="small text-muted">{riskBadge.text}</div>
-                              </td>
-                              <td>
-                                <div className="small">
-                                  <div className="fw-bold">{rec.best_time_to_visit || 'Year-round'}</div>
-                                  {rec.popular_months && <div className="text-muted">Popular: {rec.popular_months}</div>}
-                                </div>
-                              </td>
-                              <td>
-                                <Button
-                                  variant="outline-primary"
-                                  size="sm"
-                                  onClick={() => handleViewWeather(rec.city_name || rec.city)}
-                                >
-                                  <i className="fas fa-cloud-sun me-1"></i>Weather
-                                </Button>
-                              </td>
-                            </tr>
+                            <React.Fragment key={idx}>
+                              <tr>
+                                <td className="fw-bold">{idx + 1}</td>
+                                <td><strong>{rec.state_name || rec.state || 'N/A'}</strong></td>
+                                <td><strong>{cityName || 'N/A'}</strong></td>
+                                <td><Badge bg="info">{rec.category || 'N/A'}</Badge></td>
+                                <td>
+                                  <div className="d-flex align-items-center">
+                                    <span className="me-2">{getRatingStars(rec.tourist_rating || rec.rating || 0)}</span>
+                                    <span className="fw-bold">{(rec.tourist_rating || rec.rating || 0).toFixed(1)}</span>
+                                  </div>
+                                </td>
+                                <td>
+                                  <Badge bg={riskBadge.variant}>{scaledRisk}/10</Badge>
+                                  <div className="small text-muted">{riskBadge.text}</div>
+                                </td>
+                                <td>
+                                  <div className="small">
+                                    <div className="fw-bold">{rec.best_time_to_visit || 'Year-round'}</div>
+                                    {rec.popular_months && <div className="text-muted">Popular: {rec.popular_months}</div>}
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="d-flex flex-wrap gap-2">
+                                    <Button
+                                      variant="outline-primary"
+                                      size="sm"
+                                      onClick={() => handleViewWeather(cityName)}
+                                    >
+                                      <i className="fas fa-cloud-sun me-1"></i>Weather
+                                    </Button>
+                                    
+                                    {/* MODIFIED ADD BUTTON */}
+                                    <Button
+                                      variant={isAdded ? "success" : "outline-success"}
+                                      size="sm"
+                                      onClick={() => handleAddToBucketList(rec)}
+                                      disabled={isAdded}
+                                    >
+                                      <i className={`fas ${isAdded ? 'fa-check' : 'fa-plus-circle'} me-1`}></i>
+                                      {isAdded ? 'Added' : 'Add'}
+                                    </Button>
+
+                                    <Button
+                                      variant="outline-secondary"
+                                      size="sm"
+                                      onClick={() => toggleDescription(idx)}
+                                      aria-expanded={openDescription === idx}
+                                    >
+                                      <i className={`fas fa-info-circle me-1`}></i>
+                                      {openDescription === idx ? 'Hide Desc' : 'Description'}
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td colSpan="8" className="p-0 border-0">
+                                  <Collapse in={openDescription === idx}>
+                                    <div className="p-3 bg-light border-top border-bottom">
+                                      <strong className="text-primary d-block mb-1">Description:</strong>
+                                      {description}
+                                    </div>
+                                  </Collapse>
+                                </td>
+                              </tr>
+                            </React.Fragment>
                           );
                         })}
                       </tbody>

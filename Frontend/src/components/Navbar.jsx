@@ -16,7 +16,7 @@ const Navbar = () => {
   const checkLoginStatus = () => {
     const storedUsername = localStorage.getItem('username');
     const token = localStorage.getItem('token');
-    
+
     if (storedUsername && token) {
       setUsername(storedUsername);
       setIsLoggedIn(true);
@@ -45,18 +45,16 @@ const Navbar = () => {
         <BSNavbar.Brand as={Link} to="/" className="navbar-brand">
           Tourism Analyzer
         </BSNavbar.Brand>
-        
+
         <BSNavbar.Toggle aria-controls="basic-navbar-nav" />
         <BSNavbar.Collapse id="basic-navbar-nav">
           <Nav className="me-auto">
-            
-            
             {/* Only show these links when user is logged in */}
             {isLoggedIn && (
               <>
                 <Nav.Link as={Link} to="/" className={isActive('/') ? 'active' : ''}>
-              Home
-            </Nav.Link>
+                  Home
+                </Nav.Link>
                 <Nav.Link as={Link} to="/analysis" className={isActive('/analysis') ? 'active' : ''}>
                   Analysis
                 </Nav.Link>
@@ -66,10 +64,13 @@ const Navbar = () => {
                 <Nav.Link as={Link} to="/recommendation" className={isActive('/recommendation') ? 'active' : ''}>
                   Recommendation
                 </Nav.Link>
+                <Nav.Link as={Link} to="/bucketlist" className={isActive('/bucketlist') ? 'active' : ''}>
+                  Bucket List
+                </Nav.Link>
               </>
             )}
           </Nav>
-          
+
           <Nav>
             {isLoggedIn ? (
               <Dropdown>

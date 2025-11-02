@@ -14,6 +14,7 @@ import Compare from './pages/Compare';
 import Recommendation from './pages/Recommendation';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import BucketList from './pages/BucketList';
 
 
 function App() {
@@ -29,6 +30,7 @@ function App() {
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/compare" element={<Compare />} />
             <Route path="/recommendation" element={<Recommendation />} />
+            <Route path="/bucketList" element={<BucketList />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
           </Routes>
