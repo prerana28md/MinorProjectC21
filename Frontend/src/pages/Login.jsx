@@ -31,6 +31,21 @@ const Login = () => {
       localStorage.setItem('token', response.data.token || 'dummy-token');
       localStorage.setItem('username', formData.username);
       
+      // Try to fetch and save user preferences (interests, preferred_month) so Recommendation page can auto-load them
+      try {
+        const prefsRes = await authAPI.getUserInterests(formData.username);
+        // prefsRes expected to be { interests: [...] } or similar - handle both array or object
+        let interests = [];
+        if (prefsRes && prefsRes.data) {
+          if (Array.isArray(prefsRes.data)) interests = prefsRes.data;
+          else if (Array.isArray(prefsRes.data.interests)) interests = prefsRes.data.interests;
+        }
+        localStorage.setItem('currentUser', JSON.stringify({ username: formData.username, interests: interests }));
+      } catch (e) {
+        // If fetching preferences fails, still proceed without them
+        localStorage.setItem('currentUser', JSON.stringify({ username: formData.username }));
+      }
+
       // Redirect to home
       navigate('/');
     } catch (err) {
