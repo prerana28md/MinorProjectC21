@@ -385,32 +385,41 @@ const Analysis = () => {
                     {cityDetails.description || 'No detailed description available.'}
                 </p>
 
-                <Row className="g-3">
-                    {cityDetails.category && (
-                        <Col md={4}>
-                            <p className="mb-0" style={{ color: '#f39c12', fontWeight: '600' }}>
-                                <i className="fas fa-tag me-2"></i>
-                                <span>Category:</span> {cityDetails.category}
-                            </p>
-                        </Col>
-                    )}
-                    {cityDetails.best_time_to_visit && (
-                        <Col md={4}>
-                            <p className="mb-0" style={{ color: '#27ae60', fontWeight: '600' }}>
-                                <i className="fas fa-calendar-check me-2"></i>
-                                <span>Best Time:</span> {cityDetails.best_time_to_visit}
-                            </p>
-                        </Col>
-                    )}
-                    {cityDetails.tourist_rating && (
-                        <Col md={4}>
-                            <p className="mb-0" style={{ color: '#f1c40f', fontWeight: '600' }}>
-                                <i className="fas fa-star me-2"></i>
-                                <span>Rating:</span> {cityDetails.tourist_rating}/5
-                            </p>
-                        </Col>
-                    )}
-                </Row>
+                <Row className="g-3 align-items-center" style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
+  {cityDetails.category && (
+    <Col xs="auto">
+      <p className="mb-0" style={{ color: '#f39c12', fontWeight: '600', whiteSpace: 'nowrap',marginRight: '200px'}}>
+        <i className="fas fa-tag me-2"></i>
+        <span>Category:</span> {cityDetails.category}
+      </p>
+    </Col>
+  )}
+  {cityDetails.best_time_to_visit && (
+    <Col xs="auto">
+      <p className="mb-0" style={{ color: '#27ae60', fontWeight: '600', whiteSpace: 'nowrap',marginRight: '200px' }}>
+        <i className="fas fa-calendar-check me-2"></i>
+        <span>Best Time:</span> {cityDetails.best_time_to_visit}
+      </p>
+    </Col>
+  )}
+  {cityDetails.tourist_rating && (
+    <Col xs="auto">
+      <p className="mb-0" style={{ color: '#f1c40f', fontWeight: '600', whiteSpace: 'nowrap',marginRight: '200px' }}>
+        <i className="fas fa-star me-2"></i>
+        <span>Rating:</span> {cityDetails.tourist_rating}/5
+      </p>
+    </Col>
+  )}
+  {typeof cityDetails.risk_index !== "undefined" && (
+    <Col xs="auto">
+      <p className="mb-0" style={{ color: '#db3434', fontWeight: '600', whiteSpace: 'nowrap' }}>
+        <i className="fas fa-exclamation-triangle me-2"></i>
+        <span>Risk Index:</span> {(cityDetails.risk_index * 10).toFixed(1)}/10
+      </p>
+    </Col>
+  )}
+</Row>
+
 
                 {cityDetails.top_attractions && (
                     <div 
