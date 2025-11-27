@@ -22,11 +22,8 @@ const WeatherCard = ({ cityName, stateName, title = "Weather Forecast" }) => {
       } else if (stateName) {
         response = await axios.get(`${API_BASE_URL}/weather/state/${stateName}`);
       }
-
-      console.log('Weather data:', response.data);
       setWeather(response.data);
     } catch (err) {
-      console.error('Error fetching weather:', err);
       setError('Unable to fetch weather data');
     } finally {
       setLoading(false);
@@ -58,10 +55,17 @@ const WeatherCard = ({ cityName, stateName, title = "Weather Forecast" }) => {
     return 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
   };
 
+  // Utility to format UNIX timestamp to local time string
+  const formatTime = (timestamp, timezoneOffset) => {
+    if (!timestamp) return 'N/A';
+    const localTime = new Date((timestamp + (timezoneOffset || 0)) * 1000);
+    return localTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   if (loading) {
     return (
-      <Card className="h-100 shadow-lg">
-        <Card.Body className="d-flex justify-content-center align-items-center" style={{ minHeight: '300px' }}>
+      <Card className="h-100 shadow-lg d-flex flex-column">
+        <Card.Body className="d-flex justify-content-center align-items-center flex-grow-1" style={{ minHeight: '300px' }}>
           <div className="text-center">
             <Spinner animation="border" variant="primary" />
             <p className="text-muted mt-3">Loading weather data...</p>
@@ -73,7 +77,7 @@ const WeatherCard = ({ cityName, stateName, title = "Weather Forecast" }) => {
 
   if (error) {
     return (
-      <Card className="h-100 shadow-lg">
+      <Card className="h-100 shadow-lg d-flex flex-column">
         <Card.Body>
           <Alert variant="warning" className="mb-0">
             <i className="fas fa-exclamation-triangle me-2"></i>
@@ -86,8 +90,8 @@ const WeatherCard = ({ cityName, stateName, title = "Weather Forecast" }) => {
 
   if (!weather) {
     return (
-      <Card className="h-100 shadow-lg">
-        <Card.Body className="text-center">
+      <Card className="h-100 shadow-lg d-flex flex-column">
+        <Card.Body className="text-center flex-grow-1 d-flex flex-column justify-content-center">
           <i className="fas fa-cloud-sun fa-3x text-muted mb-3"></i>
           <p className="text-muted mb-0">No weather data available</p>
         </Card.Body>
@@ -96,7 +100,7 @@ const WeatherCard = ({ cityName, stateName, title = "Weather Forecast" }) => {
   }
 
   return (
-    <Card className="h-100 shadow-lg border-0 overflow-hidden">
+    <Card className="h-100 shadow-lg border-0 overflow-hidden d-flex flex-column">
       {/* Header with gradient */}
       <div 
         style={{ 
@@ -116,9 +120,9 @@ const WeatherCard = ({ cityName, stateName, title = "Weather Forecast" }) => {
         )}
       </div>
 
-      <Card.Body>
+      <Card.Body className="d-flex flex-column flex-grow-1">
         {/* Main weather display */}
-        <div className="text-center mb-4">
+        <div className="text-center mb-4 flex-shrink-0">
           <div style={{ fontSize: '5rem', lineHeight: 1 }}>
             {getWeatherIcon(weather.condition)}
           </div>
@@ -137,7 +141,7 @@ const WeatherCard = ({ cityName, stateName, title = "Weather Forecast" }) => {
         <hr className="my-3" style={{ opacity: 0.2 }} />
 
         {/* Weather details grid */}
-        <div className="row g-3">
+        <div className="row g-3 flex-grow-1">
           <div className="col-6">
             <div className="d-flex align-items-center p-2 rounded" style={{ backgroundColor: '#e3f2fd' }}>
               <div className="me-3" style={{ fontSize: '1.5rem' }}>
@@ -170,6 +174,11 @@ const WeatherCard = ({ cityName, stateName, title = "Weather Forecast" }) => {
               <div>
                 <small className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Wind Speed</small>
                 <strong style={{ fontSize: '1.1rem' }}>{weather.wind_speed} m/s</strong>
+                {weather.wind_deg !== null && (
+                  <small className="d-block text-muted" style={{ fontSize: '0.7rem' }}>
+                    Direction: {weather.wind_deg}°
+                  </small>
+                )}
               </div>
             </div>
           </div>
@@ -211,6 +220,52 @@ const WeatherCard = ({ cityName, stateName, title = "Weather Forecast" }) => {
               </div>
             </div>
           )}
+
+          {/* Additional info: Coordinates */}
+          {weather.coord && weather.coord.lat !== null && weather.coord.lon !== null && (
+            <div className="col-6">
+              <div className="p-2 rounded" style={{ backgroundColor: '#dff0d8' }}>
+                <small className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Coordinates</small>
+                <strong style={{ fontSize: '1.1rem' }}>
+                  Lat: {weather.coord.lat.toFixed(3)}, Lon: {weather.coord.lon.toFixed(3)}
+                </strong>
+              </div>
+            </div>
+          )}
+
+          {/* Sunrise and Sunset */}
+          <div className="col-6">
+            <div className="p-2 rounded" style={{ backgroundColor: '#fcf8e3' }}>
+              <small className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Sunrise / Sunset</small>
+              <strong style={{ fontSize: '1.1rem' }}>
+                {formatTime(weather.sunrise, weather.timezone)} / {formatTime(weather.sunset, weather.timezone)}
+              </strong>
+            </div>
+          </div>
+
+          {/* Rain / Snow */}
+          {(weather.rain_1h > 0 || weather.rain_3h > 0) && (
+            <div className="col-6">
+              <div className="p-2 rounded" style={{ backgroundColor: '#d9edf7' }}>
+                <small className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Rain Volume (mm)</small>
+                <strong style={{ fontSize: '1.1rem' }}>
+                  1h: {weather.rain_1h || 0}, 3h: {weather.rain_3h || 0}
+                </strong>
+              </div>
+            </div>
+          )}
+
+          {(weather.snow_1h > 0 || weather.snow_3h > 0) && (
+            <div className="col-6">
+              <div className="p-2 rounded" style={{ backgroundColor: '#e6f0fa' }}>
+                <small className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Snow Volume (mm)</small>
+                <strong style={{ fontSize: '1.1rem' }}>
+                  1h: {weather.snow_1h || 0}, 3h: {weather.snow_3h || 0}
+                </strong>
+              </div>
+            </div>
+          )}
+
         </div>
       </Card.Body>
     </Card>

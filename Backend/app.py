@@ -324,6 +324,98 @@ def state_risk(state_name):
             'hotspot_districts': ''
         }), 200
 
+@app.route('/states/<state_name>/cities/<city_name>/risk', methods=['GET'])
+def city_risk(state_name, city_name):
+    try:
+        # Step 1: Filter by state first (case-insensitive)
+        state_filtered = cities_df[
+            cities_df['state'].str.strip().str.lower() == state_name.strip().lower()
+        ]
+
+        # If no cities found for state, try partial match
+        if state_filtered.empty:
+            state_filtered = cities_df[
+                cities_df['state'].str.strip().str.lower().str.contains(state_name.strip().lower(), na=False)
+            ]
+
+        # Step 2: Then match the city within that state
+        df = state_filtered[
+            state_filtered['city'].str.strip().str.lower() == city_name.strip().lower()
+        ]
+
+        # If not found, try partial match
+        if df.empty:
+            df = state_filtered[
+                state_filtered['city'].str.strip().str.lower().str.contains(city_name.strip().lower(), na=False)
+            ]
+
+        # If still empty, normalize spaces
+        if df.empty:
+            city_normalized = city_name.strip().lower().replace(' ', '')
+            df = state_filtered[
+                state_filtered['city'].str.strip().str.lower().str.replace(' ', '') == city_normalized
+            ]
+
+        # Step 3: Handle case where no matching city found
+        if df.empty:
+            available_cities = state_filtered['city'].dropna().unique().tolist()
+            print(f"[DEBUG] No city match for '{city_name}' in state '{state_name}'")
+            print(f"[DEBUG] Available cities in {state_name}: {available_cities[:20]}")
+
+            return jsonify({
+                'state': state_name,
+                'city': city_name,
+                'risk_index': 0,
+                'risks': {},
+            })
+
+        # Step 4: Extract matched city risk data
+        risk_data = df.iloc[0].to_dict()
+
+        # Extract health and safety info
+        health_alerts = risk_data.get('health_alerts', '')
+        safety_suggestions = risk_data.get('safety_suggestions', '')
+
+        # Step 5: Collect all available risk metrics
+        risk_columns = [
+            'flood_risk', 'landslide_risk', 'earthquake_zone', 
+            'crime_rate', 'accident_rate', 'cyclone_risk', 
+            'drought_risk', 'forest_fire_risk'
+        ]
+
+        filtered_risks = {}
+        for col in risk_columns:
+            if col not in risk_data:
+                continue
+
+            value = risk_data[col]
+            if pd.isna(value):
+                continue
+
+            str_value = str(value).strip()
+            if str_value == '' or str_value.lower() == 'nan':
+                continue
+
+            filtered_risks[col] = value
+
+        # Step 6: Return structured response
+        return jsonify({
+            'state': risk_data.get('state', state_name),
+            'city': risk_data.get('city', city_name),
+            'risk_index': risk_data.get('risk_index', 0),
+            'risks': filtered_risks
+        })
+
+    except Exception as e:
+        print(f"[ERROR] in city_risk endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'state': state_name,
+            'city': city_name,
+            'risk_index': 0,
+            'risks': {}
+        }), 200
 
 # Tourism trends from states_complete.csv based on actual visitor data
 @app.route('/states/<state_name>/tourism_trends', methods=['GET'])
@@ -710,7 +802,7 @@ city_map = {
   "Jhansi": "Jhansi",
   "Jim Corbett": "Ramnagar",
   "Jodhpur": "Jodhpur",
-  "Jog Falls": "Sagara",
+  "Jog Falls": "Shivamoga",
   "Jorhat": "Jorhat",
   "Jowai": "Jowai",
   "Kalimpong": "Kalimpong",
@@ -915,29 +1007,29 @@ state_city_map = {
 # ---------------------------------------------
 # 🔹 WEATHER FOR A CITY
 # ---------------------------------------------
+from flask import jsonify
+import requests
+
+
+
 @app.route('/weather/city/<city_name>', methods=['GET'])
 def get_city_weather(city_name):
-    # Clean up city name - remove parentheses and extra content
-    clean_city = city_name.split('(')[0].strip()  # "Coorg (Kodagu)" -> "Coorg"
-    
-    # Map to API-compatible name
-    api_city_name = city_map.get(clean_city, clean_city)
-    
     try:
         ok, key_or_msg = _ensure_api_key()
         if not ok:
             return jsonify({"error": "Missing API key", "message": key_or_msg}), 500
 
-        url = (
-            f"http://api.openweathermap.org/data/2.5/weather?q={api_city_name},IN"
+        # Step 1: Fetch current weather for city to get coordinates
+        url_weather = (
+            f"http://api.openweathermap.org/data/2.5/weather?q={city_name},IN"
             f"&appid={key_or_msg}&units=metric"
         )
         
         try_count = 0
-        res = None
+        res_weather = None
         while try_count < 2:
             try:
-                res = requests.get(url, timeout=10)
+                res_weather = requests.get(url_weather, timeout=10)
                 break
             except requests.exceptions.RequestException as e:
                 app.logger.debug('Weather request attempt %s failed: %s', try_count + 1, e)
@@ -945,47 +1037,86 @@ def get_city_weather(city_name):
                 if try_count >= 2:
                     raise
         
-        data = {}
-        try:
-            data = res.json()
-        except Exception:
-            return jsonify({"error": "Unexpected response from weather provider", "status_code": res.status_code}), 502
-
-        if res.status_code == 401:
-            provider_msg = data.get('message', 'Unauthorized')
-            return jsonify({
-                "error": "Invalid or unauthorized API key for OpenWeatherMap.",
-                "provider_message": provider_msg,
-                "help": "Verify your WEATHER_API_KEY / OPENWEATHER_API_KEY environment variable."
-            }), 401
-
-        if res.status_code != 200 or "main" not in data:
-            app.logger.debug('OpenWeatherMap failed: status=%s body=%s', res.status_code, data)
+        if res_weather.status_code != 200:
+            data = res_weather.json()
             return jsonify({
                 "error": "Weather data not found",
-                "details": data,
-                "searched_city": api_city_name
-            }), 404
+                "details": data
+            }), res_weather.status_code
+        
+        data_weather = res_weather.json()
 
+        coord = data_weather.get("coord")
+        if not coord:
+            return jsonify({"error": "Coordinates not found in weather data"}), 500
+        
+        lat = coord.get("lat")
+        lon = coord.get("lon")
+
+        # Step 2: Use One Call API to get weather alerts by coordinates
+        url_one_call = (
+            f"https://api.openweathermap.org/data/3.0/onecall?"
+            f"lat={lat}&lon={lon}&exclude=minutely,hourly,daily,current"
+            f"&appid={key_or_msg}&units=metric"
+        )
+
+        try_count = 0
+        res_one_call = None
+        while try_count < 2:
+            try:
+                res_one_call = requests.get(url_one_call, timeout=10)
+                break
+            except requests.exceptions.RequestException as e:
+                app.logger.debug('One Call API request attempt %s failed: %s', try_count + 1, e)
+                try_count += 1
+                if try_count >= 2:
+                    raise
+        
+        alerts = []
+        if res_one_call and res_one_call.status_code == 200:
+            data_one_call = res_one_call.json()
+            alerts = data_one_call.get("alerts", [])
+
+        # Build response object combining current weather + alerts
         weather = {
-            "city": data["name"],
-            "temperature": round(data["main"]["temp"], 1),
-            "feels_like": round(data["main"]["feels_like"], 1),
-            "humidity": data["main"]["humidity"],
-            "pressure": data["main"].get("pressure", 0),
-            "condition": data["weather"][0]["description"].title(),
-            "wind_speed": data["wind"]["speed"],
-            "visibility": data.get("visibility", 0) / 1000 if data.get("visibility") else 0,
-            "clouds": data.get("clouds", {}).get("all", 0)
+            "city": city_name.title(),
+            "temperature": round(data_weather["main"]["temp"], 1),
+            "feels_like": round(data_weather["main"]["feels_like"], 1),
+            "humidity": data_weather["main"]["humidity"],
+            "pressure": data_weather["main"].get("pressure", 0),
+            "condition": data_weather["weather"][0]["description"].title(),
+            "weather_id": data_weather["weather"][0]["id"],
+            "weather_icon": data_weather["weather"][0]["icon"],
+            "wind_speed": data_weather["wind"]["speed"],
+            "wind_deg": data_weather["wind"].get("deg", None),
+            "visibility": data_weather.get("visibility", 0) / 1000 if data_weather.get("visibility") else 0,
+            "clouds": data_weather.get("clouds", {}).get("all", 0),
+            "coord": {
+                "lat": lat,
+                "lon": lon
+            },
+            "sunrise": data_weather.get("sys", {}).get("sunrise", None),
+            "sunset": data_weather.get("sys", {}).get("sunset", None),
+            "rain_1h": data_weather.get("rain", {}).get("1h", 0),
+            "rain_3h": data_weather.get("rain", {}).get("3h", 0),
+            "snow_1h": data_weather.get("snow", {}).get("1h", 0),
+            "snow_3h": data_weather.get("snow", {}).get("3h", 0),
+            "timezone": data_weather.get("timezone", None),
+            "alerts": alerts  # array of active alerts, can be empty
         }
         return jsonify(weather)
 
     except Exception as e:
-        return jsonify({"error": str(e), "searched_city": api_city_name}), 500
+        return jsonify({"error": str(e)}), 500
+
 
 # ---------------------------------------------
 # 🔹 WEATHER FOR A STATE (based on representative city)
 # ---------------------------------------------
+
+from flask import jsonify
+import requests
+
 @app.route('/weather/state/<state_name>', methods=['GET'])
 def get_state_weather(state_name):
     state_title = state_name.title()
@@ -998,16 +1129,17 @@ def get_state_weather(state_name):
         if not ok:
             return jsonify({"error": "Missing API key", "message": key_or_msg}), 500
 
-        url = (
+        # Fetch current weather for representative city
+        url_weather = (
             f"http://api.openweathermap.org/data/2.5/weather?q={city_api_name},IN"
             f"&appid={key_or_msg}&units=metric"
         )
         
         try_count = 0
-        res = None
+        res_weather = None
         while try_count < 2:
             try:
-                res = requests.get(url, timeout=10)
+                res_weather = requests.get(url_weather, timeout=10)
                 break
             except requests.exceptions.RequestException as e:
                 app.logger.debug('Weather request attempt %s failed: %s', try_count + 1, e)
@@ -1015,43 +1147,78 @@ def get_state_weather(state_name):
                 if try_count >= 2:
                     raise
         
-        data = {}
-        try:
-            data = res.json()
-        except Exception:
-            return jsonify({"error": "Unexpected response from weather provider", "status_code": res.status_code}), 502
-
-        if res.status_code == 401:
-            provider_msg = data.get('message', 'Unauthorized')
-            return jsonify({
-                "error": "Invalid or unauthorized API key for OpenWeatherMap.",
-                "provider_message": provider_msg,
-                "help": "Verify your WEATHER_API_KEY / OPENWEATHER_API_KEY environment variable."
-            }), 401
-
-        if res.status_code != 200 or "main" not in data:
-            app.logger.debug('OpenWeatherMap failed: status=%s body=%s', res.status_code, data)
+        if res_weather.status_code != 200:
+            data = res_weather.json()
             return jsonify({
                 "error": "Weather data not found",
                 "details": data
-            }), 404
+            }), res_weather.status_code
+        
+        data_weather = res_weather.json()
+
+        coord = data_weather.get("coord")
+        if not coord:
+            return jsonify({"error": "Coordinates not found in weather data"}), 500
+        
+        lat = coord.get("lat")
+        lon = coord.get("lon")
+
+        # Fetch alerts from One Call API v3
+        url_one_call = (
+            f"https://api.openweathermap.org/data/3.0/onecall?"
+            f"lat={lat}&lon={lon}&exclude=minutely,hourly,daily,current"
+            f"&appid={key_or_msg}&units=metric"
+        )
+
+        try_count = 0
+        res_one_call = None
+        while try_count < 2:
+            try:
+                res_one_call = requests.get(url_one_call, timeout=10)
+                break
+            except requests.exceptions.RequestException as e:
+                app.logger.debug('One Call API request attempt %s failed: %s', try_count + 1, e)
+                try_count += 1
+                if try_count >= 2:
+                    raise
+        
+        alerts = []
+        if res_one_call and res_one_call.status_code == 200:
+            data_one_call = res_one_call.json()
+            alerts = data_one_call.get("alerts", [])
 
         weather = {
             "state": state_title,
             "representative_city": city_api_name,
-            "temperature": round(data["main"]["temp"], 1),
-            "feels_like": round(data["main"]["feels_like"], 1),
-            "humidity": data["main"]["humidity"],
-            "pressure": data["main"].get("pressure", 0),  # Added pressure
-            "condition": data["weather"][0]["description"].title(),
-            "wind_speed": data["wind"]["speed"],
-            "visibility": data.get("visibility", 0) / 1000 if data.get("visibility") else 0,  # Convert to km
-            "clouds": data.get("clouds", {}).get("all", 0)
+            "temperature": round(data_weather["main"]["temp"], 1),
+            "feels_like": round(data_weather["main"]["feels_like"], 1),
+            "humidity": data_weather["main"]["humidity"],
+            "pressure": data_weather["main"].get("pressure", 0),
+            "condition": data_weather["weather"][0]["description"].title(),
+            "weather_id": data_weather["weather"][0]["id"],
+            "weather_icon": data_weather["weather"][0]["icon"],
+            "wind_speed": data_weather["wind"]["speed"],
+            "wind_deg": data_weather["wind"].get("deg", None),
+            "visibility": data_weather.get("visibility", 0) / 1000 if data_weather.get("visibility") else 0,
+            "clouds": data_weather.get("clouds", {}).get("all", 0),
+            "coord": {
+                "lat": lat,
+                "lon": lon
+            },
+            "sunrise": data_weather.get("sys", {}).get("sunrise", None),
+            "sunset": data_weather.get("sys", {}).get("sunset", None),
+            "rain_1h": data_weather.get("rain", {}).get("1h", 0),
+            "rain_3h": data_weather.get("rain", {}).get("3h", 0),
+            "snow_1h": data_weather.get("snow", {}).get("1h", 0),
+            "snow_3h": data_weather.get("snow", {}).get("3h", 0),
+            "timezone": data_weather.get("timezone", None),
+            "alerts": alerts
         }
         return jsonify(weather)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 @app.route('/compare/states', methods=['POST','GET'])
@@ -1267,6 +1434,88 @@ def predict_trend_by_category(state_name, category):
     })
 
 
+# ---------------------------------------------
+import os
+import requests
+from dotenv import load_dotenv
+load_dotenv()
+GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
+def fetch_gnews(query):
+    """
+    Fetch news for a city/state using free GNews API.
+    """
+    if not GNEWS_API_KEY:
+        return {"error": "GNEWS_API_KEY missing in .env"}
+
+    url = "https://gnews.io/api/v4/search"
+
+    params = {
+        "q": query,
+        "lang": "en",
+        "country": "in",
+        "max": 10,            # max articles (free plan)
+        "apikey": GNEWS_API_KEY
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+
+        if "errors" in data or "error" in data:
+            return {"error": "GNews API Error", "details": data}
+
+        articles = data.get("articles", [])
+
+        # Format articles
+        formatted = []
+        for a in articles:
+            formatted.append({
+                "title": a.get("title"),
+                "description": a.get("description"),
+                "url": a.get("url"),
+                "source": a.get("source", {}).get("name", ""),
+                "image": a.get("image"),
+                "publishedAt": a.get("publishedAt")
+            })
+
+        return {"query": query, "articles": formatted}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.route('/news/city/<city_name>', methods=['GET'])
+def get_city_news(city_name):
+    result = fetch_gnews(city_name)
+
+    # If no articles found, show a friendly empty result
+    if "articles" in result and len(result["articles"]) == 0:
+        return jsonify({
+            "city": city_name,
+            "articles": [],
+            "message": "No recent news found for this city."
+        })
+
+    return jsonify(result)
+
+@app.route('/news/state/<state_name>', methods=['GET'])
+def get_state_news(state_name):
+    """
+    Fetches news articles related to a specific state using the fetch_gnews helper.
+    """
+    # Use the state name as the search query
+    result = fetch_gnews(state_name)
+
+    # If no articles found, show a friendly empty result
+    if "articles" in result and len(result["articles"]) == 0:
+        return jsonify({
+            "state": state_name,
+            "articles": [],
+            "message": "No recent news found for this state."
+        })
+
+    return jsonify(result)
+
+
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
@@ -1287,6 +1536,115 @@ def cluster_states():
         "cluster_summary": result
     })
 
+
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import requests
+from urllib.parse import quote_plus
+
+
+@app.route('/nearbyplaces/overpass', methods=['GET'])
+def get_nearby_places_overpass():
+    place_name = request.args.get('place')
+    radius = request.args.get('radius', default=10000, type=int)
+
+    if not place_name:
+        return jsonify({'error': 'Place name is required'}), 400
+
+    # Step 1: Geocode using Nominatim
+    geocode_url = f"https://nominatim.openstreetmap.org/search?q={quote_plus(place_name)}&format=json&limit=1"
+
+    try:
+        geocode_resp = requests.get(geocode_url, headers={"User-Agent": "Mozilla/5.0"})
+        geocode_resp.raise_for_status()
+        geocode_data = geocode_resp.json()
+
+        if not geocode_data:
+            return jsonify({'error': f'Place \"{place_name}\" not found'}), 404
+
+        lat = float(geocode_data[0]['lat'])
+        lon = float(geocode_data[0]['lon'])
+
+    except Exception as e:
+        return jsonify({'error': f'Geocoding failed: {str(e)}'}), 500
+
+    # Step 2: Overpass query (attraction removed)
+    overpass_query = f"""
+    [out:json][timeout:25];
+    (
+      /* Tourism (NO attraction, NO viewpoint) */
+      node["tourism"~"museum|gallery|zoo|theme_park|aquarium|heritage|archaeological_site"](around:{radius},{lat},{lon});
+      way["tourism"~"museum|gallery|zoo|theme_park|aquarium|heritage|archaeological_site"](around:{radius},{lat},{lon});
+      relation["tourism"~"museum|gallery|zoo|theme_park|aquarium|heritage|archaeological_site"](around:{radius},{lat},{lon});
+
+      /* Natural places */
+      node["natural"~"peak|hill|mountain|ridge|rock|waterfall|lake|spring|cave"](around:{radius},{lat},{lon});
+      way["natural"~"peak|hill|mountain|ridge|rock|waterfall|lake|spring|cave"](around:{radius},{lat},{lon});
+      relation["natural"~"peak|hill|mountain|ridge|rock|waterfall|lake|spring|cave"](around:{radius},{lat},{lon});
+
+      /* Water bodies */
+      node["water"~"lake|reservoir|pond"](around:{radius},{lat},{lon});
+      way["water"~"lake|reservoir|pond"](around:{radius},{lat},{lon});
+      relation["water"~"lake|reservoir|pond"](around:{radius},{lat},{lon});
+
+      /* Religious places */
+      node["amenity"~"temple|place_of_worship|church|mosque"](around:{radius},{lat},{lon});
+      way["amenity"~"temple|place_of_worship|church|mosque"](around:{radius},{lat},{lon});
+      relation["amenity"~"temple|place_of_worship|church|mosque"](around:{radius},{lat},{lon});
+
+      /* Historic places */
+      node["historic"~"fort|castle|ruins|palace"](around:{radius},{lat},{lon});
+      way["historic"~"fort|castle|ruins|palace"](around:{radius},{lat},{lon});
+      relation["historic"~"fort|castle|ruins|palace"](around:{radius},{lat},{lon});
+
+      /* Parks & gardens */
+      node["leisure"~"park|garden"](around:{radius},{lat},{lon});
+      way["leisure"~"park|garden"](around:{radius},{lat},{lon});
+      relation["leisure"~"park|garden"](around:{radius},{lat},{lon});
+    );
+    out center;
+    """
+
+    # Step 3: Send request to Overpass API
+    try:
+        response = requests.post(
+            "https://overpass-api.de/api/interpreter",
+            data={'data': overpass_query}
+        )
+        response.raise_for_status()
+        data = response.json()
+    except Exception as e:
+        return jsonify({'error': f'Overpass API request failed: {str(e)}'}), 500
+
+    # Step 4: Clean, filter & return results
+    places = []
+
+    for element in data.get('elements', []):
+        tags = element.get('tags', {})
+        lat_val = element.get('lat') or (element.get('center') or {}).get('lat')
+        lon_val = element.get('lon') or (element.get('center') or {}).get('lon')
+
+        # ❌ REMOVE ALL UNNAMED PLACES
+        if 'name' not in tags:
+            continue  # skip  
+
+        # ✔ Keep only named places
+        tags['generated_name'] = tags['name']
+
+        places.append({
+            'id': element.get('id'),
+            'type': element.get('type'),
+            'lat': lat_val,
+            'lon': lon_val,
+            'tags': tags
+        })
+
+    return jsonify({
+        'place': place_name,
+        'coordinates': {'lat': lat, 'lon': lon},
+        'count': len(places),
+        'places': places
+    })
 
 if __name__ == '__main__':
     # Disable the Werkzeug auto-reloader on Windows to avoid occasional

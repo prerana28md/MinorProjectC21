@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Container, Row, Col, Form, Button, Alert, Spinner, Table, Badge, Collapse } from 'react-bootstrap';
+import {
+  Container, Row, Col, Form, Button, Alert, Spinner, Table, Badge, Collapse
+} from 'react-bootstrap';
 import axios from 'axios';
 import WeatherCard from '../components/WeatherCard';
 import '@fortawesome/fontawesome-free/css/all.min.css';
@@ -13,12 +15,19 @@ const Recommendation = () => {
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
   const [weatherData, setWeatherData] = useState({});
   const [userPreferences, setUserPreferences] = useState(null);
   const [openDescription, setOpenDescription] = useState(null);
-  // NEW STATE: To track which cities have been added to the bucket list
-  const [addedDestinations, setAddedDestinations] = useState({}); 
-  
+
+  // NEW: Nearby places states
+  const [nearbyPlacesData, setNearbyPlacesData] = useState(null); // { city: 'City, State', data: {...} }
+  const [fetchingNearby, setFetchingNearby] = useState(null); // cityKey while fetching
+  const [openNearbyCity, setOpenNearbyCity] = useState(null); // cityKey currently open
+
+  // NEW: To track which cities have been added to the bucket list
+  const [addedDestinations, setAddedDestinations] = useState({});
+
   const autoLoadDoneRef = useRef(false);
   const weatherSectionRef = useRef(null);
 
@@ -27,6 +36,8 @@ const Recommendation = () => {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
+  // Load user preferences from localStorage (if present)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const loadUserPreferences = useCallback(() => {
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
@@ -44,14 +55,18 @@ const Recommendation = () => {
     }
   }, []);
 
+  // Initial fetch of interests
   useEffect(() => {
     fetchInterests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // load saved preferences
   useEffect(() => {
     loadUserPreferences();
   }, [loadUserPreferences]);
 
+  // When preferences & interests are ready, auto-fetch recommendations once
   useEffect(() => {
     if (userPreferences?.interests && interests.length > 0) {
       const shouldSet = selectedInterests.length === 0;
@@ -63,6 +78,7 @@ const Recommendation = () => {
         }
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userPreferences, interests, selectedInterests.length]);
 
   async function fetchInterests() {
@@ -74,6 +90,7 @@ const Recommendation = () => {
         setInterests([]);
       }
     } catch {
+      // fallback hardcoded interests
       setInterests([
         'Adventure', 'Backwaters', 'Beach', 'Border Town', 'Capital',
         'Commercial', 'Crafts Village', 'Cultural', 'Heritage', 'Hill Station',
@@ -84,16 +101,16 @@ const Recommendation = () => {
     }
   }
 
-  async function autoFetchRecommendations(interests, month) {
-    if (!interests || interests.length === 0) return;
+  async function autoFetchRecommendations(interestsArr, month) {
+    if (!interestsArr || interestsArr.length === 0) return;
     setLoading(true);
     setError(null);
     setAddedDestinations({}); // Reset added status on new search
     try {
-      const requestData = { interests, month, max_risk: 10.0, min_rating: 0 };
+      const requestData = { interests: interestsArr, month, max_risk: 10.0, min_rating: 0 };
       const response = await axios.post(`${API_BASE_URL}/recommend`, requestData);
       const recs = response.data.recommendations || [];
-      const sortedRecs = recs.sort((a, b) => (b.tourist_rating || 0) - (a.tourist_rating || 0));
+      const sortedRecs = recs.sort((a, b) => (b.tourist_rating || b.rating || 0) - (a.tourist_rating || a.rating || 0));
       setRecommendations(sortedRecs);
 
       if (sortedRecs.length === 0)
@@ -119,7 +136,7 @@ const Recommendation = () => {
       const requestData = { interests: selectedInterests, month: selectedMonth, max_risk: 10.0, min_rating: 0 };
       const response = await axios.post(`${API_BASE_URL}/recommend`, requestData);
       const recs = response.data.recommendations || [];
-      const sortedRecs = recs.sort((a, b) => (b.tourist_rating || 0) - (a.tourist_rating || 0));
+      const sortedRecs = recs.sort((a, b) => (b.tourist_rating || b.rating || 0) - (a.tourist_rating || a.rating || 0));
       setRecommendations(sortedRecs);
 
       if (sortedRecs.length === 0)
@@ -147,20 +164,21 @@ const Recommendation = () => {
       return;
     }
     try {
-      const response = await axios.get(`${API_BASE_URL}/weather/city/${cityName}`);
+      const response = await axios.get(`${API_BASE_URL}/weather/city/${encodeURIComponent(cityName)}`);
       setWeatherData(prev => ({ ...prev, [cityName]: response.data }));
       if (weatherSectionRef.current) {
         weatherSectionRef.current.scrollIntoView({ behavior: 'smooth' });
       }
     } catch {
-      // Optionally handle error
+      // Optionally handle error (set fallback)
+      setWeatherData(prev => ({ ...prev, [cityName]: { temp: 'N/A', condition: 'N/A' } }));
     }
   };
 
   const handleAddToBucketList = async (rec) => {
     const username = localStorage.getItem('username');
     const cityName = rec.city_name || rec.city;
-    
+
     if (!username) {
       alert('Login required to use your bucket list!');
       return;
@@ -169,18 +187,13 @@ const Recommendation = () => {
     if (!cityName) return; // Guard against missing city name
 
     try {
-      // Optimistically set the button state to "Adding..." or similar before calling API
-      // (Optional: skipped here for simplicity)
+      await axios.post(`${API_BASE_URL}/user/${encodeURIComponent(username)}/bucket`, rec);
 
-      await axios.post(`${API_BASE_URL}/user/${username}/bucket`, rec);
-      
       // On success, update state to visually mark as added
-      setAddedDestinations(prev => ({ ...prev, [cityName]: true })); 
-
+      setAddedDestinations(prev => ({ ...prev, [cityName]: true }));
     } catch (e) {
-      // If adding fails, log error and notify user (can use a non-disruptive toast/notification here)
       console.error('Failed to add to bucket list:', e);
-      alert('Failed to add to bucket list.'); 
+      alert('Failed to add to bucket list.');
     }
   };
 
@@ -189,28 +202,153 @@ const Recommendation = () => {
   };
 
   const getRatingStars = rating => {
-    const fullStars = Math.floor(rating);
-    const hasHalfStar = rating % 1 >= 0.5;
-    return '⭐'.repeat(fullStars) + (hasHalfStar ? '⭐' : '') || '☆';
+    const r = Number(rating) || 0;
+    const fullStars = Math.floor(r);
+    const hasHalfStar = (r - fullStars) >= 0.5;
+    let stars = '⭐'.repeat(fullStars);
+    if (hasHalfStar) stars += '⭐';
+    return stars || '☆';
   };
 
   const getRiskBadge = riskIndex => {
-    const scaled = (riskIndex || 0) * 10;
+    const r = Number(riskIndex) || 0;
+    const scaled = r * 10;
     if (scaled <= 3) return { variant: 'success', text: 'Low Risk' };
     if (scaled <= 6) return { variant: 'warning', text: 'Medium Risk' };
     return { variant: 'danger', text: 'High Risk' };
   };
 
+  // -----------------------------
+  // NEW: Nearby Places functions
+  // -----------------------------
+
+  /**
+   * Fetch nearby tourist places from backend Overpass proxy endpoint.
+   * Uses axios directly (keeps file style consistent).
+   * @param {string} cityName
+   * @param {string} stateName
+   */
+  const fetchNearbyPlaces = async (cityName, stateName) => {
+    const fullPlace = `${cityName}, ${stateName}`;
+    const cityKey = fullPlace;
+
+    // If same city clicked again -> toggle close
+    if (openNearbyCity === cityKey) {
+      setOpenNearbyCity(null);
+      return;
+    }
+
+    setFetchingNearby(cityKey);
+    setNearbyPlacesData(null);
+    setError(null);
+
+    try {
+      const resp = await axios.get(`${API_BASE_URL}/nearbyplaces/overpass`, {
+        params: { place: fullPlace, radius: 5000 },
+      });
+
+      // Expecting { place, coordinates, count, places: [...] }
+      if (resp.data) {
+        setNearbyPlacesData({ city: cityKey, data: resp.data });
+        setOpenNearbyCity(cityKey);
+      } else {
+        setNearbyPlacesData({ city: cityKey, data: { count: 0, places: [] } });
+        setOpenNearbyCity(cityKey);
+      }
+    } catch (e) {
+      console.error('Nearby fetch failed:', e);
+      setError(`Failed to fetch nearby places for ${fullPlace}`);
+    } finally {
+      setFetchingNearby(null);
+    }
+  };
+
+  const renderNearbyPlaces = (data) => {
+    const places = data.places || [];
+
+    if (!places || places.length === 0) {
+      return (
+        <div className="p-3 bg-light border-top border-bottom text-center text-muted">
+          <i className="fas fa-exclamation-circle me-2"></i>
+          No major tourist attractions found within 5 km of {data.place}.
+        </div>
+      );
+    }
+
+    return (
+      <div className="p-4 bg-white border-top border-bottom">
+        <h6 className="text-primary mb-3">
+          <i className="fas fa-search-location me-2"></i>
+          Nearby Attractions ({data.count})
+        </h6>
+
+        <Row>
+          {places.map((p, idx) => {
+            const placeName = (p.tags && (p.tags.name || p.tags.tourism || p.tags.amenity)) || 'Unnamed Location';
+            const placeType = (p.tags && (p.tags.tourism || p.tags.amenity || 'attraction')).replace(/_/g, ' ');
+            const lat = p.lat || (p.center && p.center.lat);
+            const lon = p.lon || (p.center && p.center.lon);
+            const mapLink = lat && lon ? `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}` : '#';
+
+            return (
+              <Col key={idx} xs={12} sm={6} md={4} className="mb-3">
+                <div className="shadow-sm p-3 rounded" style={{ backgroundColor: '#fbfbfd' }}>
+                  <div className="d-flex align-items-start">
+                    <div className="me-3">
+                      <i className="fas fa-map-marker-alt fa-2x text-danger"></i>
+                    </div>
+                    <div className="flex-grow-1">
+                      <div className="fw-bold">{placeName}</div>
+                      <div className="text-muted small mb-2">Type: <strong>{placeType}</strong></div>
+                      <div className="d-flex gap-2">
+                        <Button
+                          href={mapLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          size="sm"
+                          variant="outline-primary"
+                        >
+                          <i className="fas fa-external-link-alt me-1"></i>View on Map
+                        </Button>
+                        {/* <Button
+                          size="sm"
+                          variant="outline-secondary"
+                          onClick={() => {
+                            if (lat && lon) {
+                              const gUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+                              window.open(gUrl, '_blank', 'noopener');
+                            } else {
+                              alert('Coordinates not available for this place.');
+                            }
+                          }}
+                        >
+                          <i className="fab fa-google me-1"></i>Open in Maps
+                        </Button> */}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Col>
+            );
+          })}
+        </Row>
+      </div>
+    );
+  };
+
+  // -----------------------------
+  // Render
+  // -----------------------------
   return (
     <div>
       <div className="page-header bg-primary text-white py-4">
-        <Container fluid> 
+        <Container fluid>
           <h1>Get Recommendations</h1>
           <p className="mb-0">Discover destinations based on your interests and preferences</p>
         </Container>
       </div>
 
-      <Container fluid className="py-5"> 
+      <Container fluid className="py-5">
         {error && (
           <Row className="mb-4">
             <Col>
@@ -223,7 +361,7 @@ const Recommendation = () => {
 
         {/* Customization Section */}
         <Row className="mb-5">
-          <Col lg={12}> 
+          <Col lg={12}>
             <div className="card shadow">
               <div className="card-body p-4">
                 <h5 className="card-title mb-4">
@@ -287,7 +425,7 @@ const Recommendation = () => {
             </div>
           </Col>
         </Row>
-        
+
         {/* Weather Section */}
         <div ref={weatherSectionRef}>
           {Object.keys(weatherData).length > 0 && (
@@ -309,7 +447,7 @@ const Recommendation = () => {
         {/* Recommended Destinations Table */}
         {recommendations.length > 0 && (
           <Row className="mb-5">
-            <Col lg={12}> 
+            <Col lg={12}>
               <div className="card shadow">
                 <div className="card-body">
                   <h5 className="card-title mb-3">
@@ -320,6 +458,7 @@ const Recommendation = () => {
                   <p className="text-muted small mb-3">
                     Showing destinations matching: <strong>{selectedInterests.join(', ')}</strong>
                   </p>
+
                   <div className="table-responsive">
                     <Table hover className="mb-0">
                       <thead className="table-light">
@@ -331,30 +470,31 @@ const Recommendation = () => {
                           <th>Rating</th>
                           <th>Risk Level</th>
                           <th>Best Time</th>
-                          <th style={{ minWidth: '280px' }}>Actions</th>
+                          <th style={{ minWidth: '320px' }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {recommendations.map((rec, idx) => {
                           const riskIndex = rec.risk_index || rec.risk || 0;
                           const riskBadge = getRiskBadge(riskIndex);
-                          const scaledRisk = (riskIndex * 10).toFixed(1);
-                          const cityName = rec.city_name || rec.city;
+                          const scaledRisk = (Number(riskIndex) * 10).toFixed(1);
+                          const cityName = rec.city_name || rec.city || rec.cityName;
                           const description = rec.description || 'No Description Available';
-                          // Check if this destination has been added
-                          const isAdded = addedDestinations[cityName]; 
+                          const stateName = rec.state_name || rec.state || rec.stateName || 'N/A';
+                          const isAdded = !!addedDestinations[cityName];
+                          const placeKey = `${cityName}, ${stateName}`;
 
                           return (
                             <React.Fragment key={idx}>
                               <tr>
                                 <td className="fw-bold">{idx + 1}</td>
-                                <td><strong>{rec.state_name || rec.state || 'N/A'}</strong></td>
+                                <td><strong>{stateName}</strong></td>
                                 <td><strong>{cityName || 'N/A'}</strong></td>
                                 <td><Badge bg="info">{rec.category || 'N/A'}</Badge></td>
                                 <td>
                                   <div className="d-flex align-items-center">
                                     <span className="me-2">{getRatingStars(rec.tourist_rating || rec.rating || 0)}</span>
-                                    <span className="fw-bold">{(rec.tourist_rating || rec.rating || 0).toFixed(1)}</span>
+                                    <span className="fw-bold">{(Number(rec.tourist_rating || rec.rating || 0)).toFixed(1)}</span>
                                   </div>
                                 </td>
                                 <td>
@@ -376,8 +516,7 @@ const Recommendation = () => {
                                     >
                                       <i className="fas fa-cloud-sun me-1"></i>Weather
                                     </Button>
-                                    
-                                    {/* MODIFIED ADD BUTTON */}
+
                                     <Button
                                       variant={isAdded ? "success" : "outline-success"}
                                       size="sm"
@@ -394,12 +533,31 @@ const Recommendation = () => {
                                       onClick={() => toggleDescription(idx)}
                                       aria-expanded={openDescription === idx}
                                     >
-                                      <i className={`fas fa-info-circle me-1`}></i>
+                                      <i className="fas fa-info-circle me-1"></i>
                                       {openDescription === idx ? 'Hide Desc' : 'Description'}
+                                    </Button>
+
+                                    {/* NEW: Nearby Button */}
+                                    <Button
+                                      variant={openNearbyCity === placeKey ? "danger" : "outline-primary"}
+                                      size="sm"
+                                      onClick={() => fetchNearbyPlaces(cityName, stateName)}
+                                      disabled={fetchingNearby === placeKey}
+                                    >
+                                      {fetchingNearby === placeKey ? (
+                                        <Spinner size="sm" animation="border" />
+                                      ) : (
+                                        <>
+                                          <i className="fas fa-map-marker-alt me-1"></i>
+                                          {openNearbyCity === placeKey ? 'Hide Nearby' : 'Nearby'}
+                                        </>
+                                      )}
                                     </Button>
                                   </div>
                                 </td>
                               </tr>
+
+                              {/* Description Row */}
                               <tr>
                                 <td colSpan="8" className="p-0 border-0">
                                   <Collapse in={openDescription === idx}>
@@ -410,12 +568,25 @@ const Recommendation = () => {
                                   </Collapse>
                                 </td>
                               </tr>
+
+                              {/* Nearby Places Row */}
+                              <tr>
+                                <td colSpan="8" className="p-0 border-0">
+                                  <Collapse in={openNearbyCity === placeKey}>
+                                    <div>
+                                      {nearbyPlacesData?.city === placeKey && nearbyPlacesData?.data &&
+                                        renderNearbyPlaces(nearbyPlacesData.data)}
+                                    </div>
+                                  </Collapse>
+                                </td>
+                              </tr>
                             </React.Fragment>
                           );
                         })}
                       </tbody>
                     </Table>
                   </div>
+
                 </div>
               </div>
             </Col>

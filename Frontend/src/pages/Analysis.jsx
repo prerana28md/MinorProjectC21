@@ -9,6 +9,7 @@ import RiskChart from '../components/RiskChart';
 import WeatherCard from '../components/WeatherCard';
 import PredictionChart from '../components/PredictionChart';
 import CategoryDonutChart from '../components/CategoryDonutChart';
+import NewsChart from '../components/NewsChart'; // <--- ADD THIS IMPORT
 
 // NOTE: API_BASE_URL is no longer needed since we use the imported dataAPI
 // const API_BASE_URL = 'http://127.0.0.1:5000'; 
@@ -23,6 +24,7 @@ const Analysis = () => {
   const [error, setError] = useState(null);
   const [predictionData, setPredictionData] = useState(null);
   const [categoryPredictionData, setCategoryPredictionData] = useState(null);
+  const [newsData, setNewsData] = useState(null); // <--- ADD THIS STATE
   
   const [cityObjects, setCityObjects] = useState([]); 
   const [cityDetails, setCityDetails] = useState(null);
@@ -120,7 +122,23 @@ const Analysis = () => {
     }
   };
 
-  // UPDATED: Using dataAPI methods
+  // <--- ADD THIS FUNCTION --->
+  const fetchNews = async (location) => {
+    try {
+      const apiCall = selectedCity
+        ? dataAPI.getCityNews(selectedCity)
+        : dataAPI.getStateNews(selectedState);
+
+      const response = await apiCall;
+      setNewsData(response.data.articles || []);
+    } catch (err) {
+      console.error(`Error fetching news for ${location}:`, err);
+      // Fail silently for news, as it's secondary data
+      setNewsData([]);
+    }
+  };
+
+  // UPDATED: Using dataAPI methods and calling fetchNews
   const handleAnalyze = async () => {
     if (!selectedState) {
       setError('Please select a state');
@@ -132,6 +150,7 @@ const Analysis = () => {
     setAnalysisData(null);
     setPredictionData(null);
     setCategoryPredictionData(null);
+    setNewsData(null); // Reset news data
 
     try {
       const [stateDetails, riskData, trendsData, predictionData] = await Promise.all([
@@ -173,6 +192,10 @@ const Analysis = () => {
           handleCategoryPrediction(cats[0]);
         }
       }
+
+      // *** ADDED: Fetch news data after main analysis is successful ***
+      await fetchNews(selectedCity || selectedState);
+      
     } catch (err) {
       console.error('Error fetching analysis data:', err);
       setError(`Failed to fetch analysis data: ${err.response?.data?.error || err.message}`);
@@ -262,6 +285,17 @@ const Analysis = () => {
     return [];
   };
 
+  // <--- ADD THIS HELPER FUNCTION --->
+  const getNewsChartTitle = () => {
+    if (selectedCity) {
+        return `Recent News Sentiment for ${selectedCity}, ${selectedState}`;
+    }
+    if (selectedState) {
+        return `Recent News Sentiment for ${selectedState}`;
+    }
+    return 'Recent News Sentiment';
+  }
+
   return (
     <div>
       <div className="page-header bg-primary text-white py-4">
@@ -288,6 +322,7 @@ const Analysis = () => {
                                         setSelectedState(e.target.value);
                                         setSelectedCity('');
                                         setAnalysisData(null);
+                                        setNewsData(null); // <--- Reset news data here
                                     }}
                                     disabled={loading}
                                 >
@@ -451,6 +486,15 @@ const Analysis = () => {
     </Row>
     )}
 
+    {/* <--- ADD THIS NEWS CHART RENDERING SECTION ---> */}
+    {newsData && (
+      <Row className="mb-5">
+        <Col lg={12}>
+          <NewsChart articles={newsData} title={getNewsChartTitle()} />
+        </Col>
+      </Row>
+    )}
+    
 
     {/* Analysis Results */}
     {analysisData && (

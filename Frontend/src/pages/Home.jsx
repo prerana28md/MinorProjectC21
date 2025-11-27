@@ -51,7 +51,7 @@ const Home = () => {
         <Container>
           <Row className="justify-content-center">
             <Col lg={8} className="text-center">
-              <h1>Indaian Tourism Trend & Risk Analyzer</h1>
+              <h1>Indian Tourism Trend & Risk Analyzer</h1>
               <p className="lead">
                 Analyze, Compare, and Explore Indian Tourism Smartly.
               </p>

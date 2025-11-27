@@ -55,10 +55,19 @@ export const dataAPI = {
   getStateRisk: (stateName) => api.get(`/states/${stateName}/risk`),
   getStateTourismTrends: (stateName) => api.get(`/states/${stateName}/tourism_trends`),
   getCityDetails: (stateName, cityName) => api.get(`/states/${stateName}/cities/${cityName}`),
-    // Get interests from the dedicated /interests endpoint
-    getInterests: () => api.get('/interests'),
+  // Get interests from the dedicated /interests endpoint
+  getInterests: () => api.get('/interests'),
+
+  // --- NEW: Overpass Nearby Places endpoint (calls your Flask backend) ---
+  // Example: dataAPI.getNearbyPlacesOverpass('Bengaluru, Karnataka', 3000)
+  getNearbyPlacesOverpass: (place, radius = 3000) =>
+    api.get(`/nearbyplaces/overpass?place=${encodeURIComponent(place)}&radius=${radius}`),
+
   getPredictTrends: (stateName) => api.get(`/predict_trend/${stateName}`),
   getPredictTrendsByCategory: (stateName, category) => api.get(`/predict_trend/${stateName}/${category}`),
+  // --- ADDED NEWS APIs ---
+  getStateNews: (stateName) => api.get(`/news/state/${stateName}`),
+  getCityNews: (cityName) => api.get(`/news/city/${cityName}`),
 };
 
 // Helper to create a mock city object for consistency
@@ -85,6 +94,27 @@ export const mockDataAPI = {
       'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
     ]
   }),
+  
+  // --- ADDED MOCK NEWS APIs ---
+  getStateNews: (stateName) => Promise.resolve({ 
+    data: { 
+      articles: [
+        { publishedAt: '2025-11-25T10:00:00Z', title: `State ${stateName} sees visitor increase`, sentiment: 'Positive' },
+        { publishedAt: '2025-11-26T11:00:00Z', title: `Road upgrades in ${stateName}`, sentiment: 'Neutral' },
+        { publishedAt: '2025-11-27T12:00:00Z', title: `Tourist advisory for ${stateName}`, sentiment: 'Negative' },
+      ]
+    } 
+  }),
+  getCityNews: (cityName) => Promise.resolve({ 
+    data: { 
+      articles: [
+        { publishedAt: '2025-11-25T10:00:00Z', title: `Positive news about ${cityName} tourism`, sentiment: 'Positive' },
+        { publishedAt: '2025-11-26T11:00:00Z', title: `Local event in ${cityName} draws crowds`, sentiment: 'Neutral' },
+        { publishedAt: '2025-11-27T12:00:00Z', title: `New attraction opens in ${cityName}`, sentiment: 'Positive' },
+      ]
+    } 
+  }),
+  // -----------------------------
   
   getStateCities: (stateName) => {
     const citiesByState = {
@@ -303,8 +333,8 @@ export const mockAiAPI = {
 
 // Weather APIs
 export const weatherAPI = {
-  getCityWeather: (cityName) => api.get(`/weather/city/${cityName}`),
-  getStateWeather: (stateName) => api.get(`/weather/state/${stateName}`),
+  getCityWeather: (cityName) => api.get(`/weather/city/${encodeURIComponent(cityName)}`),
+  getStateWeather: (stateName) => api.get(`/weather/state/${encodeURIComponent(stateName)}`),
 };
 
 export default api;
