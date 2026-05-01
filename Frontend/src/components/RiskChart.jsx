@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Alert, Badge } from 'react-bootstrap';
+import { Card, Alert} from 'react-bootstrap';
 import {
   Chart as ChartJS,
   ArcElement,

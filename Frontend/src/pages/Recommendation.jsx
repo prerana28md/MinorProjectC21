@@ -284,53 +284,44 @@ const Recommendation = () => {
 
         <Row>
           {places.map((p, idx) => {
-            const placeName = (p.tags && (p.tags.name || p.tags.tourism || p.tags.amenity)) || 'Unnamed Location';
-            const placeType = (p.tags && (p.tags.tourism || p.tags.amenity || 'attraction')).replace(/_/g, ' ');
-            const lat = p.lat || (p.center && p.center.lat);
-            const lon = p.lon || (p.center && p.center.lon);
-            const mapLink = lat && lon ? `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}` : '#';
+  const placeName = p.name || "Unnamed Location";
+  const placeType = (p.category || "attraction").replace(/_/g, " ");
 
-            return (
-              <Col key={idx} xs={12} sm={6} md={4} className="mb-3">
-                <div className="shadow-sm p-3 rounded" style={{ backgroundColor: '#fbfbfd' }}>
-                  <div className="d-flex align-items-start">
-                    <div className="me-3">
-                      <i className="fas fa-map-marker-alt fa-2x text-danger"></i>
-                    </div>
-                    <div className="flex-grow-1">
-                      <div className="fw-bold">{placeName}</div>
-                      <div className="text-muted small mb-2">Type: <strong>{placeType}</strong></div>
-                      <div className="d-flex gap-2">
-                        <Button
-                          href={mapLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          size="sm"
-                          variant="outline-primary"
-                        >
-                          <i className="fas fa-external-link-alt me-1"></i>View on Map
-                        </Button>
-                        {/* <Button
-                          size="sm"
-                          variant="outline-secondary"
-                          onClick={() => {
-                            if (lat && lon) {
-                              const gUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
-                              window.open(gUrl, '_blank', 'noopener');
-                            } else {
-                              alert('Coordinates not available for this place.');
-                            }
-                          }}
-                        >
-                          <i className="fab fa-google me-1"></i>Open in Maps
-                        </Button> */}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Col>
-            );
-          })}
+  const lat = p.lat;
+  const lon = p.lon;
+
+  const mapLink =
+    lat && lon
+      ? `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`
+      : "#";
+
+  return (
+    <Col key={idx} xs={12} sm={6} md={4} className="mb-3">
+      <div className="shadow-sm p-3 rounded" style={{ backgroundColor: '#fbfbfd' }}>
+        <div className="d-flex align-items-start">
+          <div className="me-3">
+            <i className="fas fa-map-marker-alt fa-2x text-danger"></i>
+          </div>
+          <div className="flex-grow-1">
+            <div className="fw-bold">{placeName}</div>
+            <div className="text-muted small mb-2">
+              Type: <strong>{placeType}</strong>
+            </div>
+            <Button
+              href={mapLink}
+              target="_blank"
+              rel="noreferrer"
+              size="sm"
+              variant="outline-primary"
+            >
+              View on Map
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Col>
+  );
+})}
         </Row>
       </div>
     );

@@ -55,6 +55,20 @@ risk_df = pd.read_csv(os.path.join(BASE_DIR, "data", "risk_data.csv"))
 
 if 'state_name' in cities_df.columns:
     cities_df['state_name'] = cities_df['state_name'].str.strip()
+
+# Build a fast in-memory lookup from your dataset
+# key: "city,state" (lowercased, no spaces)
+city_lookup = {}
+
+for _, row in cities_df.iterrows():
+    city = str(row.get('city_name') or row.get('city') or '').strip()
+    state = str(row.get('state_name') or row.get('state') or '').strip()
+    lat = row.get('latitude')
+    lon = row.get('longitude')
+
+    if city and state and lat and lon:
+        key = f"{city},{state}".lower().replace(" ", "")
+        city_lookup[key] = (float(lat), float(lon))
 # ---------------------------------------------
 # 🔐 USER AUTHENTICATION (Register / Login)
 # ---------------------------------------------
@@ -1537,118 +1551,292 @@ def cluster_states():
     })
 
 
-from flask import Flask, jsonify, request
-from flask_cors import CORS
+
 import requests
+import time
 from urllib.parse import quote_plus
+from flask import request, jsonify
+
+# -------------------------------
+# GLOBAL CACHES
+# -------------------------------
+geocode_cache = {}
+overpass_cache = {}
+
+# -------------------------------
+# BUILD LOOKUP FROM YOUR DATASET
+# (Assumes you already have cities_df loaded)
+# -------------------------------
+city_lookup = {}
+
+try:
+    for _, row in cities_df.iterrows():
+        city = str(row.get('city_name') or '').strip()
+        state = str(row.get('state_name') or '').strip()
+        lat = row.get('latitude')
+        lon = row.get('longitude')
+
+        if city and state and lat and lon:
+            key = f"{city},{state}".lower().replace(" ", "")
+            city_lookup[key] = (float(lat), float(lon))
+except Exception as e:
+    print("City lookup build error:", e)
 
 
+# -------------------------------
+# GEOCODING (FAST + SAFE)
+# -------------------------------
+def normalize(place):
+    return place.lower().replace(" ", "")
+
+def geocode_place(place_name):
+    key = normalize(place_name)
+
+    # ✅ CACHE
+    if key in geocode_cache:
+        return geocode_cache[key]
+
+    # ✅ DATASET LOOKUP
+    if key in city_lookup:
+        geocode_cache[key] = city_lookup[key]
+        return city_lookup[key]
+
+    # partial match fallback
+    for k, v in city_lookup.items():
+        if key in k:
+            geocode_cache[key] = v
+            return v
+
+    # ⚠️ LAST RESORT: NOMINATIM
+    try:
+        time.sleep(1)
+
+        url = f"https://nominatim.openstreetmap.org/search?q={quote_plus(place_name)}&format=json&limit=1"
+        headers = {
+            "User-Agent": "TourismApp/1.0 (your_email@example.com)"
+        }
+
+        res = requests.get(url, headers=headers, timeout=10)
+
+        if res.status_code != 200:
+            return None, None
+
+        data = res.json()
+        if not data:
+            return None, None
+
+        lat = float(data[0]['lat'])
+        lon = float(data[0]['lon'])
+
+        geocode_cache[key] = (lat, lon)
+        return lat, lon
+
+    except:
+        return None, None
+
+
+# -------------------------------
+# OVERPASS FETCH (FAST)
+# -------------------------------
+def fetch_overpass(lat, lon, radius):
+
+    cache_key = f"{lat},{lon},{radius}"
+    if cache_key in overpass_cache:
+        return overpass_cache[cache_key]
+
+    query = f"""
+    [out:json][timeout:8];
+    (
+      node["tourism"~"museum|gallery|zoo|theme_park|aquarium|attraction"](around:{radius},{lat},{lon});
+      node["natural"](around:{radius},{lat},{lon});
+      node["historic"](around:{radius},{lat},{lon});
+      node["leisure"~"park|garden"](around:{radius},{lat},{lon});
+      node["amenity"~"place_of_worship"](around:{radius},{lat},{lon});
+    );
+    out 20;
+    """
+
+    servers = [
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass-api.de/api/interpreter"
+    ]
+
+    for server in servers:
+        try:
+            res = requests.post(
+                server,
+                data=query,
+                headers={
+                    "Content-Type": "text/plain",
+                    "User-Agent": "TourismApp/1.0"
+                },
+                timeout=10
+            )
+
+            if res.status_code == 200 and "html" not in res.text.lower():
+                data = res.json()
+                elements = data.get("elements", [])
+                overpass_cache[cache_key] = elements
+                return elements
+
+        except:
+            continue
+
+    return []
+
+
+# -------------------------------
+# FINAL API ROUTE
+# -------------------------------
 @app.route('/nearbyplaces/overpass', methods=['GET'])
 def get_nearby_places_overpass():
+
     place_name = request.args.get('place')
-    radius = request.args.get('radius', default=10000, type=int)
+    radius = request.args.get('radius', default=1500, type=int)
+
+    # safe limits
+    if radius > 5000:
+        radius = 5000
+    if radius <= 0:
+        radius = 1000
 
     if not place_name:
         return jsonify({'error': 'Place name is required'}), 400
 
-    # Step 1: Geocode using Nominatim
-    geocode_url = f"https://nominatim.openstreetmap.org/search?q={quote_plus(place_name)}&format=json&limit=1"
+    # -------------------------------
+    # STEP 1: GEOCODE
+    # -------------------------------
+    lat, lon = geocode_place(place_name)
 
-    try:
-        geocode_resp = requests.get(geocode_url, headers={"User-Agent": "Mozilla/5.0"})
-        geocode_resp.raise_for_status()
-        geocode_data = geocode_resp.json()
+    if not lat or not lon:
+        return jsonify({
+            "place": place_name,
+            "count": 0,
+            "places": [],
+            "message": "Could not determine coordinates"
+        }), 200
 
-        if not geocode_data:
-            return jsonify({'error': f'Place \"{place_name}\" not found'}), 404
+    # -------------------------------
+    # STEP 2: OVERPASS
+    # -------------------------------
+    elements = fetch_overpass(lat, lon, radius)
 
-        lat = float(geocode_data[0]['lat'])
-        lon = float(geocode_data[0]['lon'])
-
-    except Exception as e:
-        return jsonify({'error': f'Geocoding failed: {str(e)}'}), 500
-
-    # Step 2: Overpass query (attraction removed)
-    overpass_query = f"""
-    [out:json][timeout:25];
-    (
-      /* Tourism (NO attraction, NO viewpoint) */
-      node["tourism"~"museum|gallery|zoo|theme_park|aquarium|heritage|archaeological_site"](around:{radius},{lat},{lon});
-      way["tourism"~"museum|gallery|zoo|theme_park|aquarium|heritage|archaeological_site"](around:{radius},{lat},{lon});
-      relation["tourism"~"museum|gallery|zoo|theme_park|aquarium|heritage|archaeological_site"](around:{radius},{lat},{lon});
-
-      /* Natural places */
-      node["natural"~"peak|hill|mountain|ridge|rock|waterfall|lake|spring|cave"](around:{radius},{lat},{lon});
-      way["natural"~"peak|hill|mountain|ridge|rock|waterfall|lake|spring|cave"](around:{radius},{lat},{lon});
-      relation["natural"~"peak|hill|mountain|ridge|rock|waterfall|lake|spring|cave"](around:{radius},{lat},{lon});
-
-      /* Water bodies */
-      node["water"~"lake|reservoir|pond"](around:{radius},{lat},{lon});
-      way["water"~"lake|reservoir|pond"](around:{radius},{lat},{lon});
-      relation["water"~"lake|reservoir|pond"](around:{radius},{lat},{lon});
-
-      /* Religious places */
-      node["amenity"~"temple|place_of_worship|church|mosque"](around:{radius},{lat},{lon});
-      way["amenity"~"temple|place_of_worship|church|mosque"](around:{radius},{lat},{lon});
-      relation["amenity"~"temple|place_of_worship|church|mosque"](around:{radius},{lat},{lon});
-
-      /* Historic places */
-      node["historic"~"fort|castle|ruins|palace"](around:{radius},{lat},{lon});
-      way["historic"~"fort|castle|ruins|palace"](around:{radius},{lat},{lon});
-      relation["historic"~"fort|castle|ruins|palace"](around:{radius},{lat},{lon});
-
-      /* Parks & gardens */
-      node["leisure"~"park|garden"](around:{radius},{lat},{lon});
-      way["leisure"~"park|garden"](around:{radius},{lat},{lon});
-      relation["leisure"~"park|garden"](around:{radius},{lat},{lon});
-    );
-    out center;
-    """
-
-    # Step 3: Send request to Overpass API
-    try:
-        response = requests.post(
-            "https://overpass-api.de/api/interpreter",
-            data={'data': overpass_query}
-        )
-        response.raise_for_status()
-        data = response.json()
-    except Exception as e:
-        return jsonify({'error': f'Overpass API request failed: {str(e)}'}), 500
-
-    # Step 4: Clean, filter & return results
+    # -------------------------------
+    # STEP 3: CLEAN DATA
+    # -------------------------------
     places = []
+    seen = set()
 
-    for element in data.get('elements', []):
-        tags = element.get('tags', {})
-        lat_val = element.get('lat') or (element.get('center') or {}).get('lat')
-        lon_val = element.get('lon') or (element.get('center') or {}).get('lon')
+    for el in elements:
+        tags = el.get("tags", {})
 
-        # ❌ REMOVE ALL UNNAMED PLACES
-        if 'name' not in tags:
-            continue  # skip  
+        # ❌ REMOVE HOTELS / STAYS
+        if tags.get("tourism") in ["hotel", "guest_house", "hostel", "motel"]:
+            continue
 
-        # ✔ Keep only named places
-        tags['generated_name'] = tags['name']
+        lat_val = el.get("lat") or (el.get("center") or {}).get("lat")
+        lon_val = el.get("lon") or (el.get("center") or {}).get("lon")
+
+        name = tags.get("name")
+
+        if not name or not lat_val or not lon_val:
+            continue
+
+        key = (name, lat_val, lon_val)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        category = (
+            tags.get("tourism") or
+            tags.get("natural") or
+            tags.get("historic") or
+            tags.get("leisure") or
+            tags.get("amenity") or
+            "other"
+        )
 
         places.append({
-            'id': element.get('id'),
-            'type': element.get('type'),
-            'lat': lat_val,
-            'lon': lon_val,
-            'tags': tags
+            "id": el.get("id"),
+            "name": name,
+            "lat": lat_val,
+            "lon": lon_val,
+            "category": category
         })
 
+    # -------------------------------
+    # FINAL RESPONSE
+    # -------------------------------
     return jsonify({
-        'place': place_name,
-        'coordinates': {'lat': lat, 'lon': lon},
-        'count': len(places),
-        'places': places
+        "place": place_name,
+        "coordinates": {"lat": lat, "lon": lon},
+        "radius_used": radius,
+        "count": len(places),
+        "places": places
     })
 
-if __name__ == '__main__':
-    # Disable the Werkzeug auto-reloader on Windows to avoid occasional
-    # OSError: [WinError 10038] when the reloader's thread/server interact
-    # poorly with the system selector. In development you can set debug
-    # True but keep use_reloader False to avoid the issue.
-    app.run(debug=True, use_reloader=False)
+@app.route('/nearbyplaces/hotels', methods=['GET'])
+def get_nearby_hotels():
+    place_name = request.args.get('place')
+    radius = request.args.get('radius', default=2000, type=int)
+    if not place_name:
+        return jsonify({"error": "Place required"}), 400
+
+    lat, lon = geocode_place(place_name)
+
+    if not lat or not lon:
+        return jsonify({"places": []}), 200
+
+    query = f"""
+[out:json][timeout:10];
+(
+  node["tourism"~"hotel|guest_house|hostel|motel"](around:{radius},{lat},{lon});
+  node["amenity"="hotel"](around:{radius},{lat},{lon});
+  way["tourism"~"hotel|guest_house|hostel|motel"](around:{radius},{lat},{lon});
+);
+out 25;
+"""
+
+    try:
+        res = requests.post(
+            "https://overpass.kumi.systems/api/interpreter",
+            data=query,
+            headers={"Content-Type": "text/plain"},
+            timeout=10
+        )
+
+        if res.status_code != 200:
+            return jsonify({"places": []}), 200
+
+        data = res.json()
+        hotels = []
+
+        for el in data.get("elements", []):
+            tags = el.get("tags", {})
+            name = tags.get("name")
+
+            lat_val = el.get("lat")
+            lon_val = el.get("lon")
+
+            if not name:
+                continue
+
+            hotels.append({
+                "name": name,
+                "lat": lat_val,
+                "lon": lon_val,
+                "type": tags.get("tourism")
+            })
+
+        return jsonify({
+            "place": place_name,
+            "count": len(hotels),
+            "places": hotels
+        })
+
+    except:
+        return jsonify({"places": []}), 200
+    
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
