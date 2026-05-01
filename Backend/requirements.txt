@@ -6,3 +6,4 @@ Flask-Bcrypt
 python-dotenv
 requests
 scikit-learn
+gunicorn
